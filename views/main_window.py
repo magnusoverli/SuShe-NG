@@ -529,14 +529,102 @@ class MainWindow(QMainWindow):
             
             # Add the table view to the layout
             layout.addWidget(self.table_view, 1)  # Give it stretch factor
-            
+            self.setup_enhanced_drag_drop()
             return panel
         except Exception as e:
             import traceback
             print(f"Error in create_main_panel: {e}")
             traceback.print_exc()
             raise
-    
+
+    def highlight_row(self, row_index):
+        """
+        Create a brief highlight animation for the specified row.
+        
+        Args:
+            row_index: Index of row to highlight
+        """
+        from PyQt6.QtCore import QTimer, QPropertyAnimation, QEasingCurve, QAbstractAnimation
+        
+        # Get the index for the row
+        index = self.model.index(row_index, 0)
+        
+        # Scroll to ensure it's visible
+        self.table_view.scrollTo(index)
+        
+        # Create a transient style sheet for the highlight
+        original_style = self.table_view.styleSheet()
+        
+        # Select the row briefly
+        self.table_view.selectRow(row_index)
+        
+        # Set a timer to clear the selection after a delay
+        QTimer.singleShot(800, lambda: self.table_view.clearSelection())
+
+    def on_data_changed(self, top_left, bottom_right):
+        """
+        Handle data changes in the model, particularly after drag and drop.
+        
+        Args:
+            top_left: Top-left index of the changed data
+            bottom_right: Bottom-right index of the changed data
+        """
+        # Flash a subtle highlight on the rows that were affected by a drag and drop
+        if hasattr(self.model, 'last_drag_target') and self.model.last_drag_target >= 0:
+            target_row = self.model.last_drag_target
+            
+            # Create a temporary style for the target row to highlight it
+            self.highlight_row(target_row)
+            
+            # Reset the drag source/target
+            self.model.last_drag_source = -1
+            self.model.last_drag_target = -1
+
+    def setup_enhanced_drag_drop(self):
+        """Set up enhanced drag and drop functionality for the album table."""
+        from views.enhanced_drag_drop import apply_drag_drop_enhancements
+        
+        # Apply the enhancements to our components
+        apply_drag_drop_enhancements(
+            self.table_view,
+            self.model,
+            self.table_view.itemDelegate()
+        )
+        
+        # Connect to dataChanged signal for animations
+        self.model.dataChanged.connect(self.on_data_changed)
+        
+        # Add visual feedback when dragging
+        self.table_view.setShowGrid(False)  # Ensure grid is off for cleaner look
+        self.table_view.setStyleSheet("""
+            QTableView {
+                background-color: #121212;
+                alternate-background-color: #181818;
+                color: #FFFFFF;
+                border: none;
+                selection-background-color: #333333;
+                selection-color: #FFFFFF;
+                outline: none; /* Remove focus outline */
+            }
+            QTableView::item {
+                padding: 8px;
+                border-bottom: 1px solid #282828;
+            }
+            QTableView::item:selected {
+                background-color: #333333;
+            }
+            QTableView::item:hover {
+                background-color: #282828;
+            }
+            /* Style for drop indicator */
+            QTableView::drop-indicator {
+                background-color: #1DB954;
+                border-radius: 2px;
+                height: 4px;
+                width: 100%;
+            }
+        """)
+
     def setup_table_view(self) -> None:
         """Set up the table view with appropriate settings."""
         print("setup_table_view starting...")

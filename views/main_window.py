@@ -147,20 +147,6 @@ class AlbumTableDelegate(QStyledItemDelegate):
                                     Qt.AspectRatioMode.KeepAspectRatio, 
                                     Qt.TransformationMode.SmoothTransformation)
                 
-                # Check if album has a cover image
-                if hasattr(album, 'cover_image') and album.cover_image:
-                    pixmap = QPixmap(album.cover_image)
-                    if pixmap.isNull():
-                        pixmap = self._get_placeholder_image(image_size)
-                else:
-                    # Create a placeholder image
-                    pixmap = self._get_placeholder_image(image_size)
-                
-                # Scale the image while keeping aspect ratio
-                pixmap = pixmap.scaled(image_size, image_size, 
-                                    Qt.AspectRatioMode.KeepAspectRatio, 
-                                    Qt.TransformationMode.SmoothTransformation)
-                
                 # Draw the image with a subtle shadow effect
                 painter.save()
                 painter.setPen(Qt.PenStyle.NoPen)

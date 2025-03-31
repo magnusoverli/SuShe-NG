@@ -63,24 +63,9 @@ class AlbumListManager:
                     # Fallback to today's date if parsing fails
                     release_date = date.today()
                 
-                # Handle cover image - decode base64 and save to file
-                cover_image_path = None
-                if 'cover_image' in album_data and album_data['cover_image']:
-                    cover_format = album_data.get('cover_image_format', 'PNG').lower()
-                    
-                    # Generate a unique filename for the cover
-                    album_id = album_data.get('album_id', f"import_{idx}")
-                    cover_filename = f"{album_id}.{cover_format}"
-                    cover_path = os.path.join(self.covers_directory, cover_filename)
-                    
-                    try:
-                        # Decode and save the image
-                        image_data = base64.b64decode(album_data['cover_image'])
-                        with open(cover_path, 'wb') as img_file:
-                            img_file.write(image_data)
-                        cover_image_path = cover_path
-                    except Exception as e:
-                        print(f"Error saving cover image: {e}")
+                # For old format, keep image data directly in the Album object
+                cover_image_data = album_data.get('cover_image')
+                cover_image_format = album_data.get('cover_image_format', 'PNG')
                 
                 # Create album object
                 album = Album(
@@ -90,7 +75,9 @@ class AlbumListManager:
                     genre1=album_data.get('genre_1', ''),
                     genre2=album_data.get('genre_2', ''),
                     comment=album_data.get('comments', ''),
-                    cover_image=cover_image_path
+                    cover_image=None,  # No file path needed
+                    cover_image_data=cover_image_data,
+                    cover_image_format=cover_image_format
                 )
                 
                 # Store additional metadata as attributes
@@ -116,7 +103,7 @@ class AlbumListManager:
             raise ImportError(f"Failed to import album list: {e}")
     
     def export_to_new_format(self, albums: List[Album], metadata: Dict[str, Any], 
-                           file_path: str) -> None:
+                        file_path: str) -> None:
         """
         Export albums to the new format JSON file.
         
@@ -151,7 +138,9 @@ class AlbumListManager:
                 "genre1": album.genre1,
                 "genre2": album.genre2,
                 "comment": album.comment,
-                "cover_image_path": album.cover_image,
+                # Store cover image data directly in the file
+                "cover_image_data": album.cover_image_data,
+                "cover_image_format": album.cover_image_format,
                 "rank": idx + 1,  # Update rank based on current position
                 # Add any additional fields from the Album object
                 "album_id": getattr(album, "album_id", ""),
@@ -209,7 +198,9 @@ class AlbumListManager:
                     genre1=album_data.get("genre1", ""),
                     genre2=album_data.get("genre2", ""),
                     comment=album_data.get("comment", ""),
-                    cover_image=album_data.get("cover_image_path")
+                    cover_image=None,  # No file path needed
+                    cover_image_data=album_data.get("cover_image_data"),
+                    cover_image_format=album_data.get("cover_image_format")
                 )
                 
                 # Add any additional fields
@@ -226,13 +217,3 @@ class AlbumListManager:
         
         except Exception as e:
             raise ImportError(f"Failed to import album list: {e}")
-
-
-class ImportError(Exception):
-    """Exception raised for errors during import."""
-    pass
-
-
-class ExportError(Exception):
-    """Exception raised for errors during export."""
-    pass

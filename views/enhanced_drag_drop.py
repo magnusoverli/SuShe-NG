@@ -35,9 +35,15 @@ def apply_drag_drop_enhancements(table_view, table_model, table_delegate):
     table_view.create_drag_preview = lambda album_names: create_drag_preview(table_view, album_names)
     
     # 5. Enhance the delegate's paint method with drag handles
-    table_delegate.original_paint = table_delegate.paint
-    table_delegate.paint = lambda painter, option, index: paint_with_drag_handle(
-        table_delegate, painter, option, index)
+    # Store a reference to the original paint method outside the delegate to avoid recursion
+    original_paint = table_delegate.paint
+    
+    # Create a wrapper function that will call our enhanced method
+    def paint_wrapper(painter, option, index):
+        paint_with_drag_handle(table_delegate, painter, option, index, original_paint)
+    
+    # Replace the paint method with our wrapper
+    table_delegate.paint = paint_wrapper
     
     # 6. Configure table view for improved drag and drop experience
     table_view.setDragDropMode(QAbstractItemView.DragDropMode.DragDrop)
@@ -51,7 +57,6 @@ def apply_drag_drop_enhancements(table_view, table_model, table_delegate):
     
     # 8. Add hover tracking for drag handle indicators
     table_view.setMouseTracking(True)
-
 
 def enhanced_mime_data(self, indexes):
     """
@@ -289,12 +294,19 @@ def enhanced_drop_mime_data(self, data, action, row, column, parent):
     return True
 
 
-def paint_with_drag_handle(self, painter, option, index):
+def paint_with_drag_handle(self, painter, option, index, original_paint):
     """
     Paint method with added drag handle indicators.
+    
+    Args:
+        self: The delegate instance
+        painter: The QPainter to use
+        option: The style option
+        index: The model index being painted
+        original_paint: The original paint method to call (not self.original_paint)
     """
-    # Call the original paint method first
-    self.original_paint(painter, option, index)
+    # Call the original paint method directly (not through self)
+    original_paint(painter, option, index)
     
     # Then add our drag handle enhancements when hovering over the first column
     col = index.column()
@@ -310,14 +322,14 @@ def paint_with_drag_handle(self, painter, option, index):
         
         # Semi-transparent overlay
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QBrush(QColor(0, 0, 0, 100)))
+        painter.setBrush(QBrush(QColor(0, 0, 0, 40)))  # Subtle opacity
         painter.drawRoundedRect(image_rect, 4, 4)
         
         # Draw grip indicators
-        painter.setPen(QPen(QColor(255, 255, 255, 160), 1.5))
+        painter.setPen(QPen(QColor(255, 255, 255, 100), 1.0))  # Subtle lines
         
         # Draw 3 short horizontal lines
-        line_width = image_rect.width() // 2
+        line_width = image_rect.width() // 3
         x_center = image_rect.center().x()
         y_spacing = image_rect.height() // 4
         

@@ -3,23 +3,26 @@ Main window view for the SuShe NG application with Spotify-like design.
 """
 
 import os
-from datetime import date
+import base64
+from datetime import date, datetime
 from typing import List, Optional
 
 from PyQt6.QtGui import (QAction, QIcon, QCloseEvent, QPixmap, QColor,
-                    QPainter, QPen, QPainterPath, QFont)
+                    QPainter, QPen, QPainterPath, QFont, QImage)
 from PyQt6.QtWidgets import (QMainWindow, QTableView, QStatusBar, QSplitter,
                            QVBoxLayout, QHBoxLayout, QWidget, QLabel, QFileDialog,
                            QPushButton, QLineEdit, QFrame, QHeaderView, QMessageBox,
                             QStyledItemDelegate, QStyle)
 from PyQt6.QtCore import (Qt, QEvent, QRect, QRectF)
-
+from views.import_dialog import show_import_dialog
+from utils.album_list_manager import AlbumListManager
 from models.album import Album
 from models.album_table_model import AlbumTableModel
 from utils.theme import SpotifyTheme
 from utils.config import Config
 from resources import get_resource_path, resource_exists
 from metadata import ICON_PATH
+
 
 
 class SidebarItem(QFrame):
@@ -117,6 +120,32 @@ class AlbumTableDelegate(QStyledItemDelegate):
                 image_size = 48  # Size of the album image
                 image_rect = QRect(opt.rect.left() + 12, opt.rect.top() + 4, 
                                 image_size, image_size)
+                
+                # Get pixmap from base64 data if available
+                pixmap = None
+                if hasattr(album, 'cover_image_data') and album.cover_image_data:
+                    try:
+                        # Convert base64 to image
+                        image_data = base64.b64decode(album.cover_image_data)
+                        qimage = QImage()
+                        qimage.loadFromData(image_data)
+                        pixmap = QPixmap.fromImage(qimage)
+                    except Exception as e:
+                        print(f"Error loading image from base64: {e}")
+                        pixmap = self._get_placeholder_image(image_size)
+                elif hasattr(album, 'cover_image') and album.cover_image:
+                    # Fallback to file path (for backward compatibility)
+                    pixmap = QPixmap(album.cover_image)
+                    if pixmap.isNull():
+                        pixmap = self._get_placeholder_image(image_size)
+                else:
+                    # Create a placeholder image
+                    pixmap = self._get_placeholder_image(image_size)
+                
+                # Scale the image while keeping aspect ratio
+                pixmap = pixmap.scaled(image_size, image_size, 
+                                    Qt.AspectRatioMode.KeepAspectRatio, 
+                                    Qt.TransformationMode.SmoothTransformation)
                 
                 # Check if album has a cover image
                 if hasattr(album, 'cover_image') and album.cover_image:
@@ -914,8 +943,8 @@ class MainWindow(QMainWindow):
             self.table_view.verticalHeader().setVisible(False)
             self.table_view.verticalHeader().setDefaultSectionSize(56)
             
-            # Create sample albums
-            self.albums = self.create_sample_albums()
+            # Start with an empty album list
+            self.albums = []
             
             # Create the model
             self.model = AlbumTableModel(self.albums)
@@ -968,6 +997,15 @@ class MainWindow(QMainWindow):
             # Add the table view to the layout
             layout.addWidget(self.table_view, 1)  # Give it stretch factor
             self.setup_enhanced_drag_drop()
+            
+            # Create list metadata for the empty list
+            self.list_metadata = {
+                "title": "Untitled List",
+                "description": "New album list",
+                "date_created": datetime.now().isoformat(),
+                "date_modified": datetime.now().isoformat()
+            }
+                
             return panel
         except Exception as e:
             import traceback
@@ -1317,75 +1355,7 @@ class MainWindow(QMainWindow):
                 background-color: #333333;
             }
         """)
-    
-    def create_sample_albums(self) -> List[Album]:
-        """
-        Create sample album data for demonstration purposes.
-        
-        Returns:
-            A list of sample Album objects
-        """
-        print("create_sample_albums starting...")
-        try:
-            # Base directory for cover images
-            cover_dir = "resources/covers"
-            print(f"Cover directory: {cover_dir}")
-            
-            # Check if the directory exists, if not let's continue without images
-            if not os.path.exists(cover_dir):
-                print(f"Cover directory doesn't exist, creating: {cover_dir}")
-                try:
-                    os.makedirs(cover_dir)
-                    print(f"Created directory: {cover_dir}")
-                except Exception as dir_err:
-                    print(f"Error creating cover directory: {dir_err}")
-            else:
-                print(f"Cover directory exists: {cover_dir}")
-                print(f"Files in cover directory: {os.listdir(cover_dir) if os.path.isdir(cover_dir) else 'Not a directory'}")
-            
-            # Create albums with paths to cover images, they may not exist yet
-            print("Creating album objects...")
-            albums = [
-                Album("Daft Punk", "Random Access Memories", date(2013, 5, 17), 
-                    "Electronic", "Disco", "Grammy-winning album",
-                    cover_image=os.path.join(cover_dir, "daft_punk_ram.jpg")),
-                Album("Radiohead", "OK Computer", date(1997, 5, 21), 
-                    "Alternative Rock", "Art Rock", "Critically acclaimed",
-                    cover_image=os.path.join(cover_dir, "radiohead_okc.jpg")),
-                Album("Kendrick Lamar", "To Pimp a Butterfly", date(2015, 3, 15), 
-                    "Hip Hop", "Jazz Rap", "Masterpiece",
-                    cover_image=os.path.join(cover_dir, "kendrick_tpab.jpg")),
-                Album("Fleetwood Mac", "Rumours", date(1977, 2, 4), 
-                    "Rock", "Pop Rock", "Classic album",
-                    cover_image=os.path.join(cover_dir, "fleetwood_rumours.jpg")),
-                Album("Amy Winehouse", "Back to Black", date(2006, 10, 27), 
-                    "Soul", "R&B", "Breakthrough album",
-                    cover_image=os.path.join(cover_dir, "amy_black.jpg")),
-                Album("The Beatles", "Abbey Road", date(1969, 9, 26),
-                    "Rock", "Pop Rock", "Iconic album cover",
-                    cover_image=os.path.join(cover_dir, "beatles_abbey.jpg")),
-                Album("Pink Floyd", "Dark Side of the Moon", date(1973, 3, 1),
-                    "Progressive Rock", "Psychedelic Rock", "One of the best-selling albums of all time",
-                    cover_image=os.path.join(cover_dir, "floyd_darkside.jpg")),
-                Album("Michael Jackson", "Thriller", date(1982, 11, 30),
-                    "Pop", "R&B", "Best-selling album worldwide",
-                    cover_image=os.path.join(cover_dir, "jackson_thriller.jpg")),
-                Album("Nirvana", "Nevermind", date(1991, 9, 24),
-                    "Grunge", "Alternative Rock", "Defined a generation",
-                    cover_image=os.path.join(cover_dir, "nirvana_nevermind.jpg")),
-                Album("Adele", "21", date(2011, 1, 24),
-                    "Soul", "Pop", "Multi-Grammy winner",
-                    cover_image=os.path.join(cover_dir, "adele_21.jpg"))
-            ]
-            print(f"Created {len(albums)} album objects")
-            print("create_sample_albums completed")
-            return albums
-        except Exception as e:
-            import traceback
-            print(f"Error in create_sample_albums: {e}")
-            traceback.print_exc()
-            raise
-    
+
     def restore_window_state(self) -> None:
         """Restore window size and position from saved configuration."""
         # Get saved window geometry

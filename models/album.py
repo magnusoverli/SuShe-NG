@@ -11,7 +11,8 @@ class Album:
     
     def __init__(self, artist: str, name: str, release_date: date,
                  genre1: str, genre2: str = "", comment: str = "", 
-                 cover_image: Optional[str] = None):
+                 cover_image: Optional[str] = None, cover_image_data: Optional[str] = None,
+                 cover_image_format: Optional[str] = None):
         """
         Initialize an Album object.
         
@@ -22,7 +23,9 @@ class Album:
             genre1: Primary genre
             genre2: Secondary genre (optional)
             comment: Additional comments (optional)
-            cover_image: Path to cover image file (optional)
+            cover_image: Path to cover image file (optional) - for backward compatibility
+            cover_image_data: Base64 encoded image data (optional)
+            cover_image_format: Format of the image (e.g., 'PNG', 'JPEG')
         """
         self.artist = artist
         self.name = name
@@ -31,6 +34,8 @@ class Album:
         self.genre2 = genre2
         self.comment = comment
         self.cover_image = cover_image
+        self.cover_image_data = cover_image_data
+        self.cover_image_format = cover_image_format
     
     def __str__(self) -> str:
         """Return string representation of the album."""

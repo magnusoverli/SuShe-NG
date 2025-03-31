@@ -3,13 +3,15 @@ Album data model
 """
 
 from datetime import date
+from typing import Optional
 
 
 class Album:
     """Class representing a musical album."""
     
     def __init__(self, artist: str, name: str, release_date: date,
-                 genre1: str, genre2: str = "", comment: str = ""):
+                 genre1: str, genre2: str = "", comment: str = "", 
+                 cover_image: Optional[str] = None):
         """
         Initialize an Album object.
         
@@ -20,6 +22,7 @@ class Album:
             genre1: Primary genre
             genre2: Secondary genre (optional)
             comment: Additional comments (optional)
+            cover_image: Path to cover image file (optional)
         """
         self.artist = artist
         self.name = name
@@ -27,6 +30,7 @@ class Album:
         self.genre1 = genre1
         self.genre2 = genre2
         self.comment = comment
+        self.cover_image = cover_image
     
     def __str__(self) -> str:
         """Return string representation of the album."""

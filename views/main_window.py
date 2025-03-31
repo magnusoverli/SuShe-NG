@@ -7,13 +7,12 @@ from datetime import date
 from typing import List, Optional
 
 from PyQt6.QtGui import (QAction, QIcon, QCloseEvent, QPixmap, QColor,
-                    QPainter, QPen, QPainterPath, QBrush, QFont)
+                    QPainter, QPen, QPainterPath, QFont)
 from PyQt6.QtWidgets import (QMainWindow, QTableView, QStatusBar, QSplitter,
-                           QVBoxLayout, QHBoxLayout, QWidget, QFileDialog, QMessageBox,
-                           QLabel, QPushButton, QLineEdit, QFrame, QScrollArea,
-                           QSizePolicy, QToolButton, QMenu, QHeaderView, QListWidget,
-                           QListWidgetItem, QStyledItemDelegate, QStyle)
-from PyQt6.QtCore import (QSize, QPoint, Qt, QMargins, QEvent, QRect, QRectF, QModelIndex)
+                           QVBoxLayout, QHBoxLayout, QWidget, QLabel, QFileDialog,
+                           QPushButton, QLineEdit, QFrame, QHeaderView, QMessageBox,
+                            QStyledItemDelegate, QStyle)
+from PyQt6.QtCore import (Qt, QEvent, QRect, QRectF)
 
 from models.album import Album
 from models.album_table_model import AlbumTableModel
@@ -336,7 +335,446 @@ class MainWindow(QMainWindow):
             print(f"Error in MainWindow.__init__: {e}")
             traceback.print_exc()
             raise
-    
+
+    def _new_file(self):
+        """Create a new empty album list."""
+        # Ask confirmation if there are unsaved changes
+        if hasattr(self, 'albums') and self.albums:
+            result = QMessageBox.question(
+                self,
+                "New Album List",
+                "Do you want to create a new album list? Any unsaved changes will be lost.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
+            )
+            
+            if result != QMessageBox.StandardButton.Yes:
+                return
+        
+        # Create a new empty list
+        self.albums = []
+        self.model = AlbumTableModel(self.albums)
+        self.table_view.setModel(self.model)
+        
+        # Set up the table again to ensure proper display
+        self.setup_enhanced_drag_drop()
+        
+        # Reset current file path
+        self.current_file_path = None
+        
+        # Reset metadata
+        self.list_metadata = {
+            "title": "Untitled List",
+            "description": "New album list",
+            "date_created": datetime.now().isoformat(),
+            "date_modified": datetime.now().isoformat()
+        }
+        
+        # Update window title
+        self.setWindowTitle("Untitled List - SuShe NG")
+        
+        # Update status bar
+        self.status_bar.showMessage("Created new album list")
+
+
+    def _import_list(self):
+        """
+        Import an album list from a file.
+        """
+        try:
+            # Show the import dialog
+            albums, metadata = show_import_dialog(self)
+            
+            if albums is None:
+                # User canceled
+                return
+            
+            # Ask if the user wants to replace or append
+            if hasattr(self, 'albums') and self.albums:
+                msg_box = QMessageBox(self)
+                msg_box.setWindowTitle("Import Albums")
+                msg_box.setText(f"Found {len(albums)} albums in the import file.")
+                msg_box.setInformativeText("Do you want to replace your current list or append to it?")
+                replace_button = msg_box.addButton("Replace", QMessageBox.ButtonRole.AcceptRole)
+                append_button = msg_box.addButton("Append", QMessageBox.ButtonRole.YesRole)
+                cancel_button = msg_box.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+                msg_box.setDefaultButton(append_button)
+                
+                msg_box.exec()
+                
+                if msg_box.clickedButton() == cancel_button:
+                    return
+                
+                if msg_box.clickedButton() == replace_button:
+                    # Replace the current list
+                    self.albums = albums
+                    
+                    # Create a new model with the imported albums
+                    self.model = AlbumTableModel(self.albums)
+                    self.table_view.setModel(self.model)
+                    
+                    # Set up the table again to ensure proper display
+                    self.setup_enhanced_drag_drop()
+                else:
+                    # Append to the current list
+                    for album in albums:
+                        self.model.add_album(album)
+                    
+                    # Update the list reference
+                    self.albums = self.model.albums
+            else:
+                # No existing albums, just set the list
+                self.albums = albums
+                
+                # Create a new model with the imported albums
+                self.model = AlbumTableModel(self.albums)
+                self.table_view.setModel(self.model)
+                
+                # Set up the table again to ensure proper display
+                self.setup_enhanced_drag_drop()
+            
+            # Update the status bar
+            self.status_bar.showMessage(f"Imported {len(albums)} albums from {metadata.get('title', 'file')}")
+            
+            # Store the metadata in the window for future reference
+            self.list_metadata = metadata
+            
+            # Update window title to show the list name
+            list_title = metadata.get("title", "Untitled List")
+            self.setWindowTitle(f"{list_title} - SuShe NG")
+            
+        except Exception as e:
+            # Show error message
+            QMessageBox.critical(
+                self,
+                "Import Error",
+                f"An error occurred while importing: {str(e)}"
+            )
+
+
+    def _export_list(self):
+        """
+        Export the current album list to a file.
+        """
+        try:
+            # Check if there are albums to export
+            if not hasattr(self, 'albums') or not self.albums:
+                QMessageBox.warning(
+                    self,
+                    "Export Warning",
+                    "There are no albums to export."
+                )
+                return
+            
+            # Create metadata if it doesn't exist
+            if not hasattr(self, 'list_metadata'):
+                self.list_metadata = {
+                    "title": "My Album List",
+                    "description": "Album list created with SuShe NG"
+                }
+            
+            # Get save file path
+            file_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "Export Album List",
+                f"{self.list_metadata.get('title', 'My Album List')}.sush",
+                "SuShe NG Files (*.sush);;All Files (*.*)"
+            )
+            
+            if not file_path:
+                # User canceled
+                return
+            
+            # Create a list manager
+            list_manager = AlbumListManager()
+            
+            # Export the list
+            list_manager.export_to_new_format(
+                self.albums,
+                self.list_metadata,
+                file_path
+            )
+            
+            # Update the status bar
+            self.status_bar.showMessage(f"Exported {len(self.albums)} albums to {file_path}")
+            
+            # Add to recent files
+            if hasattr(self, 'config') and self.config:
+                self.config.add_recent_file(file_path)
+                self._update_recent_files_menu()
+            
+        except Exception as e:
+            # Show error message
+            QMessageBox.critical(
+                self,
+                "Export Error",
+                f"An error occurred while exporting: {str(e)}"
+            )
+
+
+    def _open_file(self):
+        """
+        Open an album list from a file.
+        """
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Open Album List",
+            "",
+            "SuShe NG Files (*.sush);;JSON Files (*.json);;All Files (*.*)"
+        )
+        
+        if file_path:
+            self.open_album_list(file_path)
+
+
+    def open_album_list(self, file_path):
+        """
+        Open an album list from a file.
+        
+        Args:
+            file_path: Path to the album list file
+        """
+        try:
+            # Check file extension
+            if file_path.endswith('.json'):
+                # Old format
+                list_manager = AlbumListManager()
+                albums, metadata = list_manager.import_from_old_format(file_path)
+            elif file_path.endswith('.sush'):
+                # New format
+                list_manager = AlbumListManager()
+                albums, metadata = list_manager.import_from_new_format(file_path)
+            else:
+                # Unknown format
+                QMessageBox.warning(
+                    self,
+                    "Unknown File Format",
+                    f"The file {file_path} has an unsupported format."
+                )
+                return
+            
+            # Set the albums
+            self.albums = albums
+            
+            # Create a new model with the loaded albums
+            self.model = AlbumTableModel(self.albums)
+            self.table_view.setModel(self.model)
+            
+            # Set up the table again to ensure proper display
+            self.setup_enhanced_drag_drop()
+            
+            # Store the metadata
+            self.list_metadata = metadata
+            
+            # Store the current file path
+            self.current_file_path = file_path
+            
+            # Update window title
+            list_title = metadata.get("title", "Untitled List")
+            self.setWindowTitle(f"{list_title} - SuShe NG")
+            
+            # Update the status bar
+            self.status_bar.showMessage(f"Opened {len(albums)} albums from {file_path}")
+            
+            # Add to recent files
+            if hasattr(self, 'config') and self.config:
+                self.config.add_recent_file(file_path)
+                
+                # Update the recent files menu
+                self._update_recent_files_menu()
+            
+        except Exception as e:
+            # Show error message
+            QMessageBox.critical(
+                self,
+                "Open Error",
+                f"An error occurred while opening the file: {str(e)}"
+            )
+
+
+    def _save_file(self):
+        """
+        Save the current album list to a file.
+        """
+        # Check if we have a current file path
+        current_file = getattr(self, 'current_file_path', None)
+        
+        if current_file:
+            # Save to the current file
+            self._do_save_file(current_file)
+        else:
+            # No current file, use Save As
+            self._save_file_as()
+
+
+    def _save_file_as(self):
+        """
+        Save the current album list to a new file.
+        """
+        # Check if there are albums to save
+        if not hasattr(self, 'albums') or not self.albums:
+            QMessageBox.warning(
+                self,
+                "Save Warning",
+                "There are no albums to save."
+            )
+            return
+        
+        # Create metadata if it doesn't exist
+        if not hasattr(self, 'list_metadata'):
+            self.list_metadata = {
+                "title": "My Album List",
+                "description": "Album list created with SuShe NG"
+            }
+        
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save Album List",
+            f"{self.list_metadata.get('title', 'My Album List')}.sush",
+            "SuShe NG Files (*.sush);;All Files (*.*)"
+        )
+        
+        if file_path:
+            self._do_save_file(file_path)
+
+
+    def _do_save_file(self, file_path):
+        """
+        Save the current album list to the specified file.
+        
+        Args:
+            file_path: Path to save the file
+        """
+        try:
+            # Create a list manager
+            list_manager = AlbumListManager()
+            
+            # Create metadata if it doesn't exist
+            if not hasattr(self, 'list_metadata'):
+                self.list_metadata = {
+                    "title": "My Album List",
+                    "description": "Album list created with SuShe NG",
+                    "date_created": datetime.now().isoformat(),
+                    "date_modified": datetime.now().isoformat()
+                }
+            else:
+                # Update the modification date
+                self.list_metadata["date_modified"] = datetime.now().isoformat()
+            
+            # Export the list
+            list_manager.export_to_new_format(
+                self.albums,
+                self.list_metadata,
+                file_path
+            )
+            
+            # Store the current file path
+            self.current_file_path = file_path
+            
+            # Update window title
+            list_title = self.list_metadata.get("title", "Untitled List")
+            self.setWindowTitle(f"{list_title} - SuShe NG")
+            
+            # Update the status bar
+            self.status_bar.showMessage(f"Saved {len(self.albums)} albums to {file_path}")
+            
+            # Add to recent files
+            if hasattr(self, 'config') and self.config:
+                self.config.add_recent_file(file_path)
+                
+                # Update the recent files menu
+                self._update_recent_files_menu()
+                
+        except Exception as e:
+            # Show error message
+            QMessageBox.critical(
+                self,
+                "Save Error",
+                f"An error occurred while saving: {str(e)}"
+            )
+
+
+    def _update_recent_files_menu(self):
+        """
+        Update the recent files menu.
+        """
+        if not hasattr(self, 'recent_files_menu'):
+            return
+        
+        # Clear the menu
+        self.recent_files_menu.clear()
+        
+        # Get recent files
+        recent_files = []
+        if hasattr(self, 'config') and self.config:
+            recent_files = self.config.get_recent_files()
+        
+        if not recent_files:
+            # Add a disabled "No recent files" action
+            action = QAction("No recent files", self)
+            action.setEnabled(False)
+            self.recent_files_menu.addAction(action)
+        else:
+            # Add actions for each recent file
+            for file_path in recent_files:
+                file_name = os.path.basename(file_path)
+                action = QAction(file_name, self)
+                action.setData(file_path)
+                action.triggered.connect(lambda checked, path=file_path: self.open_album_list(path))
+                self.recent_files_menu.addAction(action)
+            
+            # Add separator
+            self.recent_files_menu.addSeparator()
+            
+            # Add "Clear Recent Files" action
+            clear_action = QAction("Clear Recent Files", self)
+            clear_action.triggered.connect(self._clear_recent_files)
+            self.recent_files_menu.addAction(clear_action)
+
+    def closeEvent(self, event: QCloseEvent) -> None:
+        """
+        Handle the window close event.
+        
+        Args:
+            event: The close event
+        """
+        # Check for unsaved changes
+        # This is a simple implementation - you might want to add more sophisticated change tracking
+        if hasattr(self, 'albums') and self.albums and not hasattr(self, 'current_file_path'):
+            # Unsaved changes
+            result = QMessageBox.question(
+                self,
+                "Unsaved Changes",
+                "You have unsaved changes. Do you want to save before closing?",
+                QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel,
+                QMessageBox.StandardButton.Save
+            )
+            
+            if result == QMessageBox.StandardButton.Save:
+                self._save_file()
+                # Check if save was successful
+                if not hasattr(self, 'current_file_path'):
+                    # Save was canceled or failed
+                    event.ignore()
+                    return
+            elif result == QMessageBox.StandardButton.Cancel:
+                event.ignore()
+                return
+        
+        # Save window state before closing
+        self.save_window_state()
+        
+        # Accept the close event
+        event.accept()
+
+    def _clear_recent_files(self):
+        """
+        Clear the recent files list.
+        """
+        if hasattr(self, 'config') and self.config:
+            self.config.set("recent_files", [])
+            self._update_recent_files_menu()
+
     def create_sidebar(self) -> QWidget:
         """Create the Spotify-like sidebar."""
         sidebar = QWidget()
@@ -713,28 +1151,48 @@ class MainWindow(QMainWindow):
         # New action
         new_action = QAction("&New", self)
         new_action.setShortcut("Ctrl+N")
+        new_action.triggered.connect(self._new_file)
         file_menu.addAction(new_action)
         
         # Open action
         open_action = QAction("&Open", self)
         open_action.setShortcut("Ctrl+O")
+        open_action.triggered.connect(self._open_file)
         file_menu.addAction(open_action)
         
         # Save action
         save_action = QAction("&Save", self)
         save_action.setShortcut("Ctrl+S")
+        save_action.triggered.connect(self._save_file)
         file_menu.addAction(save_action)
         
         # Save As action
         save_as_action = QAction("Save &As", self)
         save_as_action.setShortcut("Ctrl+Shift+S")
+        save_as_action.triggered.connect(self._save_file_as)
         file_menu.addAction(save_as_action)
+        
+        # Add separator
+        file_menu.addSeparator()
+        
+        # Import action
+        import_action = QAction("&Import List...", self)
+        import_action.setShortcut("Ctrl+I")
+        import_action.triggered.connect(self._import_list)
+        file_menu.addAction(import_action)
+        
+        # Export action
+        export_action = QAction("&Export List...", self)
+        export_action.setShortcut("Ctrl+E")
+        export_action.triggered.connect(self._export_list)
+        file_menu.addAction(export_action)
         
         # Add separator
         file_menu.addSeparator()
         
         # Recent files submenu
         self.recent_files_menu = file_menu.addMenu("Recent Files")
+        self._update_recent_files_menu()
         
         # Add another separator
         file_menu.addSeparator()

@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "susheng"
+version = "0.1.0"
+description = "A music album manager with a Spotify-like interface"
+readme = "README.md"
+authors = [
+    {name = "Your Name", email = "your.email@example.com"}
+]
+license = {text = "MIT"}
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: End Users/Desktop",
+    "Topic :: Multimedia :: Sound/Audio",
+]
+dependencies = [
+    "PyQt6>=6.5.0",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/yourusername/susheng"
+"Bug Tracker" = "https://github.com/yourusername/susheng/issues"
+
+[project.gui-scripts]
+susheng = "susheng.main:main"
+
+[tool.setuptools]
+packages = ["susheng"]
+include-package-data = true
+
+[tool.setuptools.package-data]
+"susheng.resources" = ["icons/*"]

@@ -3,26 +3,42 @@ Main window view for the SuShe NG application.
 """
 
 from datetime import date
-from typing import List
+from typing import List, Optional
 
-from PyQt6.QtGui import QAction
+from PyQt6.QtGui import QAction, QIcon, QCloseEvent
 from PyQt6.QtWidgets import (QMainWindow, QTableView, QStatusBar,
-                           QVBoxLayout, QWidget)
+                           QVBoxLayout, QWidget, QFileDialog, QMessageBox)
+from PyQt6.QtCore import QSize, QPoint, Qt
 
 from models.album import Album
 from models.album_table_model import AlbumTableModel
 from utils.theme import SpotifyTheme
+from utils.config import Config
+from resources import get_resource_path, resource_exists
+from metadata import ICON_PATH
 
 
 class MainWindow(QMainWindow):
     """Main application window."""
     
-    def __init__(self):
-        """Initialize the main window."""
+    def __init__(self, config: Optional[Config] = None):
+        """
+        Initialize the main window.
+        
+        Args:
+            config: Application configuration manager (optional)
+        """
         super().__init__()
+        
+        # Store the configuration manager
+        self.config = config or Config()
         
         self.setWindowTitle("SuShe NG")
         self.setMinimumSize(800, 600)
+        
+        # Set window icon if available
+        if resource_exists(ICON_PATH):
+            self.setWindowIcon(QIcon(get_resource_path(ICON_PATH)))
         
         # Create a central widget and layout
         central_widget = QWidget()
@@ -54,6 +70,9 @@ class MainWindow(QMainWindow):
         
         # Apply Spotify-like dark theme
         self.apply_theme()
+        
+        # Restore window geometry from config
+        self.restore_window_state()
     
     def setup_table_view(self) -> None:
         """Set up the table view with appropriate settings."""
@@ -95,9 +114,16 @@ class MainWindow(QMainWindow):
         # Add separator
         file_menu.addSeparator()
         
+        # Recent files submenu (placeholder for now)
+        self.recent_files_menu = file_menu.addMenu("Recent Files")
+        
+        # Add another separator
+        file_menu.addSeparator()
+        
         # Exit action
         exit_action = QAction("E&xit", self)
         exit_action.setShortcut("Ctrl+Q")
+        exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
     
     def apply_theme(self) -> None:
@@ -124,3 +150,54 @@ class MainWindow(QMainWindow):
             Album("Amy Winehouse", "Back to Black", date(2006, 10, 27), 
                  "Soul", "R&B", "Breakthrough album")
         ]
+    
+    def restore_window_state(self) -> None:
+        """Restore window size and position from saved configuration."""
+        # Get saved window geometry
+        width = self.config.get("window/width", self.config.get_default("window/width"))
+        height = self.config.get("window/height", self.config.get_default("window/height"))
+        pos_x = self.config.get("window/position_x")
+        pos_y = self.config.get("window/position_y")
+        maximized = self.config.get("window/maximized", False)
+        
+        # Set window size
+        if width and height:
+            self.resize(width, height)
+        
+        # Set window position if it was saved
+        if pos_x is not None and pos_y is not None:
+            self.move(pos_x, pos_y)
+        
+        # Maximize window if it was maximized
+        if maximized:
+            self.setWindowState(Qt.WindowState.WindowMaximized)
+    
+    def save_window_state(self) -> None:
+        """Save window size and position to configuration."""
+        # Only save if we have a config manager
+        if not self.config:
+            return
+        
+        # Save maximized state
+        is_maximized = self.windowState() & Qt.WindowState.WindowMaximized
+        self.config.set("window/maximized", bool(is_maximized))
+        
+        # Only save size and position if not maximized
+        if not is_maximized:
+            self.config.set("window/width", self.width())
+            self.config.set("window/height", self.height())
+            self.config.set("window/position_x", self.x())
+            self.config.set("window/position_y", self.y())
+    
+    def closeEvent(self, event: QCloseEvent) -> None:
+        """
+        Handle the window close event.
+        
+        Args:
+            event: The close event
+        """
+        # Save window state before closing
+        self.save_window_state()
+        
+        # Accept the close event
+        event.accept()

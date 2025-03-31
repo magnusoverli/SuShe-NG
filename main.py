@@ -118,9 +118,16 @@ def main():
         config = Config()
         print("Config manager created")
         
+        # Initialize the list repository
+        print("Initializing list repository...")
+        from utils.list_repository import ListRepository
+        from views.initialization import initialize_repository
+        list_repository = initialize_repository(config)
+        print("List repository initialized")
+        
         # Create and show the main window
         print("Creating main window...")
-        window = MainWindow(config)
+        window = MainWindow(config, list_repository)
         print("Main window created")
         
         print("Showing main window...")

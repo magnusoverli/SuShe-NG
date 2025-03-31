@@ -8,6 +8,7 @@ import os
 import json
 import shutil
 import platform
+import traceback
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
@@ -37,6 +38,12 @@ class ListRepository:
         
         # Album list manager for importing/exporting
         self.list_manager = AlbumListManager()
+        
+        # Log repository info for debugging
+        print(f"Repository initialized at: {self.base_dir}")
+        print(f"Lists directory: {self.lists_dir}")
+        print(f"Collections directory: {self.collections_dir}")
+        print(f"Loaded metadata with {len(self.metadata.get('collections', {}))} collections")
     
     def _get_base_directory(self) -> str:
         """
@@ -74,6 +81,7 @@ class ListRepository:
                     return json.load(f)
             except Exception as e:
                 print(f"Error loading metadata: {e}")
+                traceback.print_exc()
         
         # Initialize with default metadata
         return {
@@ -89,10 +97,18 @@ class ListRepository:
             # Update the last updated timestamp
             self.metadata["last_updated"] = datetime.now().isoformat()
             
+            # Create the file path if it doesn't exist
+            metadata_dir = os.path.dirname(self.metadata_file)
+            os.makedirs(metadata_dir, exist_ok=True)
+            
             with open(self.metadata_file, "w", encoding="utf-8") as f:
                 json.dump(self.metadata, f, indent=2)
+                
+            # Log that we saved the metadata for debugging
+            print(f"Saved metadata: {len(self.metadata.get('collections', {}))} collections")
         except Exception as e:
             print(f"Error saving metadata: {e}")
+            traceback.print_exc()
     
     def get_all_lists(self) -> List[Dict[str, Any]]:
         """
@@ -313,13 +329,30 @@ class ListRepository:
         Args:
             collection_name: Name of the collection
         """
+        # Sanity check the name
+        if not collection_name.strip():
+            print("Error: Cannot create collection with empty name")
+            return
+            
+        # Get existing collections or initialize empty dict
         collections = self.metadata.get("collections", {})
         
-        if collection_name not in collections:
-            collections[collection_name] = []
+        # Check if collection exists
+        if collection_name in collections:
+            print(f"Collection {collection_name} already exists, skipping creation")
+            return
             
-            self.metadata["collections"] = collections
-            self._save_metadata()
+        # Create the collection directory
+        collection_dir = os.path.join(self.collections_dir, collection_name)
+        os.makedirs(collection_dir, exist_ok=True)
+        
+        # Add the collection to metadata
+        collections[collection_name] = []
+        self.metadata["collections"] = collections
+        
+        # Save the metadata
+        print(f"Creating new collection: {collection_name}")
+        self._save_metadata()
     
     def rename_collection(self, old_name: str, new_name: str) -> bool:
         """
@@ -332,11 +365,28 @@ class ListRepository:
         Returns:
             True if successful, False otherwise
         """
+        # Sanity check the names
+        if not old_name.strip() or not new_name.strip():
+            return False
+            
         collections = self.metadata.get("collections", {})
         
         if old_name in collections and new_name not in collections:
+            # Rename the collection in metadata
             collections[new_name] = collections[old_name]
             del collections[old_name]
+            
+            # Rename the collection directory
+            old_dir = os.path.join(self.collections_dir, old_name)
+            new_dir = os.path.join(self.collections_dir, new_name)
+            
+            # Only try to rename if the old directory exists
+            if os.path.exists(old_dir):
+                try:
+                    os.rename(old_dir, new_dir)
+                except Exception as e:
+                    print(f"Error renaming collection directory: {e}")
+                    # Continue anyway since the metadata is more important
             
             self.metadata["collections"] = collections
             self._save_metadata()
@@ -357,7 +407,17 @@ class ListRepository:
         collections = self.metadata.get("collections", {})
         
         if collection_name in collections:
+            # Remove from metadata
             del collections[collection_name]
+            
+            # Remove the collection directory
+            collection_dir = os.path.join(self.collections_dir, collection_name)
+            if os.path.exists(collection_dir):
+                try:
+                    shutil.rmtree(collection_dir)
+                except Exception as e:
+                    print(f"Error removing collection directory: {e}")
+                    # Continue anyway since the metadata is more important
             
             self.metadata["collections"] = collections
             self._save_metadata()
@@ -446,12 +506,13 @@ class ListRepository:
             
             # Remove from collections
             collections = self.metadata.get("collections", {})
-            for collection, files in collections.items():
+            for collection, files in list(collections.items()):
                 if file_path in files:
                     files.remove(file_path)
-            
-            # Filter out empty collections
-            self.metadata["collections"] = {k: v for k, v in collections.items() if v}
+                    
+                    # If this was the last file in the collection, consider removing the collection
+                    if not files:
+                        collections[collection] = []
             
             # Save metadata changes
             self._save_metadata()
@@ -462,6 +523,7 @@ class ListRepository:
             return True
         except Exception as e:
             print(f"Error deleting list: {e}")
+            traceback.print_exc()
             return False
     
     def import_external_list(self, external_path: str) -> Optional[str]:
@@ -490,6 +552,7 @@ class ListRepository:
             return self.save_list(albums, metadata, file_name)
         except Exception as e:
             print(f"Error importing external list: {e}")
+            traceback.print_exc()
             return None
     
     def _sanitize_filename(self, filename: str) -> str:

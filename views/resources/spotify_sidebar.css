@@ -1,0 +1,177 @@
+/* 
+ * Spotify Sidebar Styles
+ * Accurately replicates the Spotify desktop client styling 
+ */
+
+/* Main sidebar container */
+QScrollArea#spotifySidebar, #spotifySidebarWidget {
+    background-color: #000000;
+    border: none;
+}
+
+/* Navigation items (Home, Search) */
+#spotifyNav {
+    background-color: transparent;
+    border-radius: 4px;
+    min-height: 40px;
+    padding: 0 16px;
+}
+
+#spotifyNav:hover {
+    background-color: #282828;
+}
+
+#spotifyNavLabel {
+    color: #B3B3B3;
+    font-size: 14px;
+    font-weight: 700;
+}
+
+#spotifyNav:hover #spotifyNavLabel {
+    color: #FFFFFF;
+}
+
+/* Library header */
+#spotifyLibraryHeader {
+    margin: 8px 0;
+    padding: 0 16px;
+    min-height: 40px;
+}
+
+#spotifyLibraryTitle {
+    color: #B3B3B3;
+    font-size: 14px;
+    font-weight: 700;
+}
+
+#spotifyLibraryNewButton {
+    color: #B3B3B3;
+    background-color: transparent;
+    border: none;
+    border-radius: 14px;
+    width: 28px;
+    height: 28px;
+    font-size: 18px;
+    font-weight: 700;
+}
+
+#spotifyLibraryNewButton:hover {
+    color: #FFFFFF;
+    background-color: #333333;
+}
+
+#spotifyLibraryNewButton:pressed {
+    background-color: #444444;
+}
+
+/* Create button styled like Spotify */
+#spotifyCreateButton {
+    color: #000000;
+    background-color: #FFFFFF;
+    border: none;
+    border-radius: 20px;
+    padding: 8px 16px;
+    font-weight: bold;
+    margin: 16px 20px;
+    min-height: 32px;
+}
+
+#spotifyCreateButton:hover {
+    transform: scale(1.05);
+    background-color: #F0F0F0;
+}
+
+#spotifyCreateButton:pressed {
+    background-color: #E0E0E0;
+}
+
+/* Tree widget for lists */
+QTreeWidget#spotifyLibraryTree {
+    background-color: transparent;
+    border: none;
+    outline: none;
+}
+
+QTreeWidget#spotifyLibraryTree::item {
+    height: 32px;
+    padding: 4px 0;
+    padding-left: 16px;
+    border-radius: 4px;
+    margin: 2px 8px;
+    color: #B3B3B3;
+    font-size: 14px;
+}
+
+QTreeWidget#spotifyLibraryTree::item:selected {
+    background-color: #333333;
+    color: #FFFFFF;
+}
+
+QTreeWidget#spotifyLibraryTree::item:hover {
+    background-color: #282828;
+}
+
+/* Top-level items styled like Spotify's categories */
+QTreeWidget#spotifyLibraryTree QTreeWidgetItem[level="0"] {
+    color: #FFFFFF;
+    font-weight: bold;
+    margin-top: 8px;
+}
+
+/* Context menus styled like Spotify */
+QMenu {
+    background-color: #282828;
+    color: #FFFFFF;
+    border: 1px solid #333333;
+    border-radius: 4px;
+    padding: 4px 0;
+}
+
+QMenu::item {
+    padding: 8px 24px;
+    font-size: 14px;
+}
+
+QMenu::item:selected {
+    background-color: #333333;
+}
+
+QMenu::separator {
+    height: 1px;
+    background-color: #333333;
+    margin: 4px 8px;
+}
+
+/* Scrollbars styled like Spotify */
+QScrollBar:vertical {
+    background-color: #000000;
+    width: 8px;
+    margin: 0px;
+}
+
+QScrollBar::handle:vertical {
+    background-color: #535353;
+    border-radius: 4px;
+    min-height: 30px;
+}
+
+QScrollBar::handle:vertical:hover {
+    background-color: #B3B3B3;
+}
+
+QScrollBar::add-line:vertical,
+QScrollBar::sub-line:vertical {
+    height: 0px;
+}
+
+QScrollBar::add-page:vertical,
+QScrollBar::sub-page:vertical {
+    background-color: transparent;
+}
+
+/* Horizontal separator line */
+#spotifySpacer {
+    background-color: #282828;
+    height: 1px;
+    margin: 8px 0;
+}

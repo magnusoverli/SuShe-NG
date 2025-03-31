@@ -23,7 +23,8 @@ from utils.config import Config
 from resources import get_resource_path, resource_exists
 from metadata import ICON_PATH
 
-
+from utils.list_repository import ListRepository
+from PyQt6.QtWidgets import QInputDialog
 
 class SidebarItem(QFrame):
     """Custom sidebar item with Spotify-like styling."""
@@ -244,12 +245,13 @@ class AlbumTableDelegate(QStyledItemDelegate):
 class MainWindow(QMainWindow):
     """Main application window with Spotify-like design."""
     
-    def __init__(self, config: Optional[Config] = None):
+    def __init__(self, config: Optional[Config] = None, list_repository: Optional[ListRepository] = None):
         """
         Initialize the main window.
         
         Args:
             config: Application configuration manager (optional)
+            list_repository: Repository for list management (optional)
         """
         print("MainWindow.__init__ starting...")
         try:
@@ -259,6 +261,10 @@ class MainWindow(QMainWindow):
             # Store the configuration manager
             self.config = config or Config()
             print("Config stored")
+            
+            # Store the list repository
+            self.list_repository = list_repository or ListRepository()
+            print("List repository stored")
             
             self.setWindowTitle("SuShe NG")
             self.setMinimumSize(1000, 700)
@@ -390,76 +396,41 @@ class MainWindow(QMainWindow):
         
         # Update status bar
         self.status_bar.showMessage("Created new album list")
+        
+        # Refresh the sidebar if it exists
+        if hasattr(self, 'sidebar_manager'):
+            self.sidebar_manager.refresh_lists()
 
 
     def _import_list(self):
-        """
-        Import an album list from a file.
-        """
+        """Import an album list from a file."""
         try:
-            # Show the import dialog
-            albums, metadata = show_import_dialog(self)
+            # Get file path from dialog
+            file_path, _ = QFileDialog.getOpenFileName(
+                self,
+                "Import Album List",
+                "",
+                "Album Lists (*.json *.sush);;All Files (*.*)"
+            )
             
-            if albums is None:
-                # User canceled
+            if not file_path:
                 return
-            
-            # Ask if the user wants to replace or append
-            if hasattr(self, 'albums') and self.albums:
-                msg_box = QMessageBox(self)
-                msg_box.setWindowTitle("Import Albums")
-                msg_box.setText(f"Found {len(albums)} albums in the import file.")
-                msg_box.setInformativeText("Do you want to replace your current list or append to it?")
-                replace_button = msg_box.addButton("Replace", QMessageBox.ButtonRole.AcceptRole)
-                append_button = msg_box.addButton("Append", QMessageBox.ButtonRole.YesRole)
-                cancel_button = msg_box.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
-                msg_box.setDefaultButton(append_button)
                 
-                msg_box.exec()
-                
-                if msg_box.clickedButton() == cancel_button:
-                    return
-                
-                if msg_box.clickedButton() == replace_button:
-                    # Replace the current list
-                    self.albums = albums
+            # Import the file into the repository
+            if hasattr(self, 'list_repository') and self.list_repository:
+                imported_path = self.list_repository.import_external_list(file_path)
+                if imported_path:
+                    self.open_album_list(imported_path)
+                    self.status_bar.showMessage(f"Imported list from {file_path}")
                     
-                    # Create a new model with the imported albums
-                    self.model = AlbumTableModel(self.albums)
-                    self.table_view.setModel(self.model)
-                    
-                    # Set up the table again to ensure proper display
-                    self.setup_enhanced_drag_drop()
-                else:
-                    # Append to the current list
-                    for album in albums:
-                        self.model.add_album(album)
-                    
-                    # Update the list reference
-                    self.albums = self.model.albums
+                    # Refresh the sidebar
+                    if hasattr(self, 'sidebar_manager'):
+                        self.sidebar_manager.refresh_lists()
             else:
-                # No existing albums, just set the list
-                self.albums = albums
+                # Fallback to old import method
+                self.open_album_list(file_path)
                 
-                # Create a new model with the imported albums
-                self.model = AlbumTableModel(self.albums)
-                self.table_view.setModel(self.model)
-                
-                # Set up the table again to ensure proper display
-                self.setup_enhanced_drag_drop()
-            
-            # Update the status bar
-            self.status_bar.showMessage(f"Imported {len(albums)} albums from {metadata.get('title', 'file')}")
-            
-            # Store the metadata in the window for future reference
-            self.list_metadata = metadata
-            
-            # Update window title to show the list name
-            list_title = metadata.get("title", "Untitled List")
-            self.setWindowTitle(f"{list_title} - SuShe NG")
-            
         except Exception as e:
-            # Show error message
             QMessageBox.critical(
                 self,
                 "Import Error",
@@ -550,23 +521,27 @@ class MainWindow(QMainWindow):
             file_path: Path to the album list file
         """
         try:
-            # Check file extension
-            if file_path.endswith('.json'):
-                # Old format
-                list_manager = AlbumListManager()
-                albums, metadata = list_manager.import_from_old_format(file_path)
-            elif file_path.endswith('.sush'):
-                # New format
-                list_manager = AlbumListManager()
-                albums, metadata = list_manager.import_from_new_format(file_path)
+            # Load the list from the repository or directly from the file
+            if hasattr(self, 'list_repository') and self.list_repository:
+                albums, metadata = self.list_repository.load_list(file_path)
             else:
-                # Unknown format
-                QMessageBox.warning(
-                    self,
-                    "Unknown File Format",
-                    f"The file {file_path} has an unsupported format."
-                )
-                return
+                # Fallback to direct loading for backward compatibility
+                if file_path.endswith('.json'):
+                    # Old format
+                    list_manager = AlbumListManager()
+                    albums, metadata = list_manager.import_from_old_format(file_path)
+                elif file_path.endswith('.sush'):
+                    # New format
+                    list_manager = AlbumListManager()
+                    albums, metadata = list_manager.import_from_new_format(file_path)
+                else:
+                    # Unknown format
+                    QMessageBox.warning(
+                        self,
+                        "Unknown File Format",
+                        f"The file {file_path} has an unsupported format."
+                    )
+                    return
             
             # Set the albums
             self.albums = albums
@@ -591,12 +566,9 @@ class MainWindow(QMainWindow):
             # Update the status bar
             self.status_bar.showMessage(f"Opened {len(albums)} albums from {file_path}")
             
-            # Add to recent files
-            if hasattr(self, 'config') and self.config:
-                self.config.add_recent_file(file_path)
-                
-                # Update the recent files menu
-                self._update_recent_files_menu()
+            # Refresh the sidebar if it exists
+            if hasattr(self, 'sidebar_manager'):
+                self.sidebar_manager.refresh_lists()
             
         except Exception as e:
             # Show error message
@@ -605,6 +577,7 @@ class MainWindow(QMainWindow):
                 "Open Error",
                 f"An error occurred while opening the file: {str(e)}"
             )
+
 
 
     def _save_file(self):
@@ -791,38 +764,153 @@ class MainWindow(QMainWindow):
             self._update_recent_files_menu()
 
     def create_sidebar(self) -> QWidget:
-        """Create the Spotify-like sidebar."""
-        sidebar = QWidget()
-        sidebar.setObjectName("sidebar")
-        sidebar.setFixedWidth(220)
+        """Create the application sidebar using the SidebarManager."""
+        # Create the sidebar manager
+        from views.sidebar_manager import SidebarManager
+        self.sidebar_manager = SidebarManager(self.list_repository)
         
-        layout = QVBoxLayout(sidebar)
-        layout.setContentsMargins(0, 12, 0, 0)
-        layout.setSpacing(8)
+        # Connect signals
+        self.sidebar_manager.create_new_list.connect(self._new_file)
+        self.sidebar_manager.import_list.connect(self._import_list)
+        self.sidebar_manager.open_list.connect(self.open_album_list)
+        self.sidebar_manager.favorite_toggled.connect(self._on_favorite_toggled)
+        self.sidebar_manager.list_deleted.connect(self._on_list_deleted)
         
-        # Add sidebar items
-        layout.addWidget(SidebarItem("Home", "home"))
-        layout.addWidget(SidebarItem("Search", "search"))
+        return self.sidebar_manager
+
+    def _on_favorite_toggled(self, file_path: str, is_favorite: bool) -> None:
+        """
+        Handle toggling favorite status for a list.
         
-        # Add a separator line
-        separator = QFrame()
-        separator.setFrameShape(QFrame.Shape.HLine)
-        separator.setFrameShadow(QFrame.Shadow.Sunken)
-        separator.setStyleSheet("background-color: #282828; max-height: 1px;")
-        layout.addWidget(separator)
-        layout.addSpacing(8)
+        Args:
+            file_path: Path to the list file
+            is_favorite: Whether the list is now a favorite
+        """
+        status = "added to" if is_favorite else "removed from"
+        self.status_bar.showMessage(f"List {status} favorites")
+
+
+    def _on_list_deleted(self, file_path: str) -> None:
+        """
+        Handle list deletion.
         
-        # Add library section
-        layout.addWidget(SidebarItem("Your Library", "library"))
-        layout.addWidget(SidebarItem("All Albums"))
-        layout.addWidget(SidebarItem("By Artist"))
-        layout.addWidget(SidebarItem("By Genre"))
-        layout.addWidget(SidebarItem("Recently Added"))
+        Args:
+            file_path: Path to the deleted list file
+        """
+        # Check if the deleted list is the currently open list
+        current_file = getattr(self, 'current_file_path', None)
+        if current_file == file_path:
+            # Create a new empty list
+            self._new_file()
         
-        # Add stretch to push items to the top
-        layout.addStretch()
+        self.status_bar.showMessage(f"List deleted")
+
+    def save_to_repository(self, existing_path: str = None) -> None:
+        """
+        Save the current album list to the repository.
         
-        return sidebar
+        Args:
+            existing_path: Path to existing file (optional)
+        """
+        try:
+            # Make sure we have albums and metadata
+            if not hasattr(self, 'albums') or not self.albums:
+                QMessageBox.warning(
+                    self,
+                    "Save Warning",
+                    "There are no albums to save."
+                )
+                return
+            
+            # Create metadata if it doesn't exist
+            if not hasattr(self, 'list_metadata'):
+                self.list_metadata = {
+                    "title": "My Album List",
+                    "description": "Album list created with SuShe NG",
+                    "date_created": datetime.now().isoformat(),
+                    "date_modified": datetime.now().isoformat()
+                }
+            else:
+                # Update the modification date
+                self.list_metadata["date_modified"] = datetime.now().isoformat()
+            
+            # Get the file name from the existing path, if provided
+            file_name = None
+            if existing_path:
+                file_name = os.path.basename(existing_path)
+            
+            # Save to the repository
+            file_path = self.list_repository.save_list(
+                self.albums, self.list_metadata, file_name)
+            
+            # Store the current file path
+            self.current_file_path = file_path
+            
+            # Update window title
+            list_title = self.list_metadata.get("title", "Untitled List")
+            self.setWindowTitle(f"{list_title} - SuShe NG")
+            
+            # Update the status bar
+            self.status_bar.showMessage(f"Saved {len(self.albums)} albums to repository")
+            
+            # Refresh the sidebar
+            self.sidebar_manager.refresh_lists()
+                
+        except Exception as e:
+            # Show error message
+            QMessageBox.critical(
+                self,
+                "Save Error",
+                f"An error occurred while saving: {str(e)}"
+            )
+
+    def _save_file(self):
+        """Save the current album list."""
+        # Check if we have a current file path
+        current_file = getattr(self, 'current_file_path', None)
+        
+        if current_file:
+            # Save to the current file
+            self.save_to_repository(current_file)
+        else:
+            # No current file, use Save As
+            self._save_file_as()
+
+    def _save_file_as(self):
+        """Save the current album list with a new name."""
+        # Check if there are albums to save
+        if not hasattr(self, 'albums') or not self.albums:
+            QMessageBox.warning(
+                self,
+                "Save Warning",
+                "There are no albums to save."
+            )
+            return
+        
+        # Create metadata if it doesn't exist
+        if not hasattr(self, 'list_metadata'):
+            self.list_metadata = {
+                "title": "My Album List",
+                "description": "Album list created with SuShe NG",
+                "date_created": datetime.now().isoformat(),
+                "date_modified": datetime.now().isoformat()
+            }
+        
+        # Ask for a list title
+        title, ok = QInputDialog.getText(
+            self, "Save As", "Enter a title for the list:", 
+            text=self.list_metadata.get("title", "My Album List"))
+        
+        if ok and title:
+            # Update the metadata with the new title
+            self.list_metadata["title"] = title
+            
+            # Save with a new filename
+            self.save_to_repository()
+        else:
+            # User canceled, don't save
+            return
+
     
     def create_main_panel(self) -> QWidget:
         """Create the main content panel with header and album table."""

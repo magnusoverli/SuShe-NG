@@ -1,5 +1,5 @@
 """
-Models package for the Album Manager application.
+Models package for the SuShe NG application.
 """
 
 from models.album import Album

@@ -1,5 +1,5 @@
 """
-Main window view for the Album Manager application.
+Main window view for the SuShe NG application.
 """
 
 from datetime import date
@@ -21,7 +21,7 @@ class MainWindow(QMainWindow):
         """Initialize the main window."""
         super().__init__()
         
-        self.setWindowTitle("Album Manager")
+        self.setWindowTitle("SuShe NG")
         self.setMinimumSize(800, 600)
         
         # Create a central widget and layout

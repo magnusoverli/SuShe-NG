@@ -1,5 +1,5 @@
 """
-Views package for the Album Manager application.
+Views package for the SuShe NG application.
 """
 
 from views.main_window import MainWindow

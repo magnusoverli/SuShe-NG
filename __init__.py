@@ -1,5 +1,5 @@
 """
-Album Manager Package
+SuShe NG Package
 A PyQt6 application for managing music albums with a Spotify-like interface
 """
 

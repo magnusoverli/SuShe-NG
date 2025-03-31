@@ -1,5 +1,5 @@
 """
-Utilities package for the Album Manager application.
+Utilities package for the SuShe NG application.
 """
 
 from utils.theme import SpotifyTheme

@@ -116,6 +116,9 @@ class AlbumListManager:
         if not file_path.endswith(self.FILE_EXTENSION):
             file_path += self.FILE_EXTENSION
         
+        # Load points mapping from resources
+        points_mapping = self._load_points_mapping()
+        
         # Build the data structure for the new format
         data = {
             "format_version": self.CURRENT_FORMAT_VERSION,
@@ -131,6 +134,12 @@ class AlbumListManager:
         
         # Add each album to the data structure
         for idx, album in enumerate(albums):
+            # Calculate rank (1-based index)
+            rank = idx + 1
+            
+            # Look up points based on rank
+            points = points_mapping.get(str(rank), 1)  # Default to 1 point if rank not found
+            
             album_data = {
                 "artist": album.artist,
                 "title": album.name,
@@ -141,7 +150,8 @@ class AlbumListManager:
                 # Store cover image data directly in the file
                 "cover_image_data": album.cover_image_data,
                 "cover_image_format": album.cover_image_format,
-                "rank": idx + 1,  # Update rank based on current position
+                "rank": rank,  # Update rank based on current position
+                "points": points,  # Add points based on rank
                 # Add any additional fields from the Album object
                 "album_id": getattr(album, "album_id", ""),
                 "country": getattr(album, "country", "")
@@ -154,6 +164,28 @@ class AlbumListManager:
                 json.dump(data, f, indent=2, ensure_ascii=False)
         except Exception as e:
             raise ExportError(f"Failed to export album list: {e}")
+
+    def _load_points_mapping(self) -> Dict[str, int]:
+        """
+        Load the points mapping from the resources file.
+        
+        Returns:
+            A dictionary mapping rank (as string) to points
+        """
+        try:
+            # Try to load the points mapping from the resources directory
+            from resources import get_resource_path
+            points_path = get_resource_path("points.json")
+            
+            with open(points_path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception as e:
+            # If there's an error, use a default mapping
+            print(f"Warning: Could not load points mapping: {e}")
+            print("Using default points mapping (rank = points)")
+            
+            # Default mapping: rank = points
+            return {str(i): max(1, 61-i) for i in range(1, 61)}
     
     def import_from_new_format(self, file_path: str) -> Tuple[List[Album], Dict[str, Any]]:
         """
@@ -210,6 +242,8 @@ class AlbumListManager:
                     album.country = album_data["country"]
                 if "rank" in album_data:
                     album.rank = album_data["rank"]
+                if "points" in album_data:
+                    album.points = album_data["points"]
                 
                 albums.append(album)
             

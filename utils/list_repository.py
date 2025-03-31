@@ -171,6 +171,7 @@ class ListRepository:
         
         return favorite_lists
     
+
     def get_collections(self) -> Dict[str, List[Dict[str, Any]]]:
         """
         Get all collections and their lists.
@@ -189,8 +190,8 @@ class ListRepository:
                     if list_info:
                         collection_lists.append(list_info)
             
-            if collection_lists:
-                collections[collection_name] = collection_lists
+            # Always include the collection, even if it has no lists
+            collections[collection_name] = collection_lists
         
         return collections
     

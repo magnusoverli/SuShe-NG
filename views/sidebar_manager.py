@@ -74,8 +74,8 @@ class SpotifyIconProvider:
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
         painter.setPen(color)
-        # Use a font size slightly larger than the icon size to fill properly
-        painter.setFont(QFont("Segoe UI", size * 0.75))
+        # Convert float to int for font size - fixes the error
+        painter.setFont(QFont("Segoe UI", int(size * 0.75)))
         painter.drawText(pixmap.rect(), Qt.AlignmentFlag.AlignCenter, char)
         painter.end()
         
@@ -158,8 +158,9 @@ class SpotifyNav(QFrame):
 
 
 class SpotifyLibraryHeader(QFrame):
-    """Spotify-style library header with title and buttons."""
+    """Spotify-style library header with title."""
     
+    # Keep the signal declaration even though we won't use the + button
     new_clicked = pyqtSignal()  # Signal emitted when the new button is clicked
     
     def __init__(self, parent=None):
@@ -192,31 +193,6 @@ class SpotifyLibraryHeader(QFrame):
         
         # Add spacer
         layout.addStretch()
-        
-        # Add new button
-        self.new_button = QToolButton()
-        self.new_button.setObjectName("spotifyLibraryNewButton")
-        self.new_button.setFixedSize(28, 28)
-        self.new_button.setText("+")
-        self.new_button.setFont(QFont("Gotham", 16, QFont.Weight.Bold))
-        self.new_button.setStyleSheet("""
-            QToolButton {
-                color: #B3B3B3;
-                background-color: transparent;
-                border: none;
-                border-radius: 14px;
-            }
-            QToolButton:hover {
-                color: #FFFFFF;
-                background-color: #333333;
-            }
-            QToolButton:pressed {
-                color: #FFFFFF;
-                background-color: #444444;
-            }
-        """)
-        self.new_button.clicked.connect(self.new_clicked.emit)
-        layout.addWidget(self.new_button)
 
 
 class SpotifyCreateButton(QPushButton):
@@ -392,7 +368,7 @@ class SidebarManager(QScrollArea):
         """Create the library section with Spotify styling."""
         # Create the library header with buttons
         self.library_header = SpotifyLibraryHeader()
-        self.library_header.new_clicked.connect(self.create_new_list.emit)
+        # No longer connect to the new_clicked signal since we removed the button
         self.sidebar_layout.addWidget(self.library_header)
         
         # Add spacing
@@ -421,6 +397,14 @@ class SidebarManager(QScrollArea):
     
     def refresh_lists(self) -> None:
         """Refresh the lists displayed in the sidebar."""
+        # Save expansion state before refreshing
+        expansion_state = {}
+        for i in range(self.lists_tree.topLevelItemCount()):
+            item = self.lists_tree.topLevelItem(i)
+            item_id = item.data(0, Qt.ItemDataRole.UserRole)
+            if item_id:
+                expansion_state[item_id] = item.isExpanded()
+        
         # Clear the tree
         self.lists_tree.clear()
         
@@ -437,7 +421,7 @@ class SidebarManager(QScrollArea):
         
         # Add "Recent Lists" top-level item
         recent_lists_item = QTreeWidgetItem(self.lists_tree)
-        recent_lists_item.setText(0, "Recently Played")  # Spotify-like terminology
+        recent_lists_item.setText(0, "Recent Lists")
         recent_lists_item.setData(0, Qt.ItemDataRole.UserRole, "recent_lists")
         recent_lists_item.setFont(0, QFont("Gotham", 12, QFont.Weight.Medium))
         
@@ -448,7 +432,7 @@ class SidebarManager(QScrollArea):
         
         # Add "Favorites" top-level item
         favorites_item = QTreeWidgetItem(self.lists_tree)
-        favorites_item.setText(0, "Liked Lists")  # Spotify-like terminology
+        favorites_item.setText(0, "Liked Lists")
         favorites_item.setData(0, Qt.ItemDataRole.UserRole, "favorites")
         favorites_item.setFont(0, QFont("Gotham", 12, QFont.Weight.Medium))
         
@@ -459,18 +443,20 @@ class SidebarManager(QScrollArea):
         
         # Add "Collections" top-level item
         collections_item = QTreeWidgetItem(self.lists_tree)
-        collections_item.setText(0, "Folders")  # Spotify-like terminology
+        collections_item.setText(0, "Collections")
         collections_item.setData(0, Qt.ItemDataRole.UserRole, "collections")
         collections_item.setFont(0, QFont("Gotham", 12, QFont.Weight.Medium))
         
         # Add collections and their lists
         collections = self.list_repository.get_collections()
+        collection_items = {}
         for collection_name, collection_lists in collections.items():
             # Create the collection item
             collection_item = QTreeWidgetItem(collections_item)
             collection_item.setText(0, collection_name)
             collection_item.setData(0, Qt.ItemDataRole.UserRole, f"collection:{collection_name}")
             collection_item.setFont(0, QFont("Gotham", 11))
+            collection_items[collection_name] = collection_item
             
             # Add lists to the collection
             for list_info in collection_lists:
@@ -478,17 +464,50 @@ class SidebarManager(QScrollArea):
         
         # Add "Add Collection" item to collections
         add_collection_item = QTreeWidgetItem(collections_item)
-        add_collection_item.setText(0, "Create folder")  # Spotify-like terminology
+        add_collection_item.setText(0, "Create collection")
         add_collection_item.setData(0, Qt.ItemDataRole.UserRole, "add_collection")
-        add_collection_item.setForeground(0, QColor(179, 179, 179))  # Spotify gray
+        add_collection_item.setForeground(0, QColor(179, 179, 179))
         add_collection_item.setFont(0, QFont("Gotham", 11, QFont.Weight.Normal))
         
-        # Expand all items
-        self.lists_tree.expandAll()
+        # Restore expansion state
+        for i in range(self.lists_tree.topLevelItemCount()):
+            item = self.lists_tree.topLevelItem(i)
+            item_id = item.data(0, Qt.ItemDataRole.UserRole)
+            if item_id in expansion_state:
+                item.setExpanded(expansion_state[item_id])
+            else:
+                # Default expansion for items we've never seen before
+                item.setExpanded(True)
         
-        # Make sure "Collections" is visible
-        collections_item.setExpanded(True)
-    
+        # Always make sure Collections is visible on first load if no saved state
+        if "collections" not in expansion_state:
+            collections_item.setExpanded(True)
+
+
+    def remember_collection_expansion_state(self) -> None:
+        """
+        Store the current expansion state of collections for later restoration.
+        Should be called before operations like rename/create that refresh the tree.
+        """
+        if not hasattr(self, 'collection_expansion_state'):
+            self.collection_expansion_state = {}
+        
+        # Find the collections item
+        for i in range(self.lists_tree.topLevelItemCount()):
+            item = self.lists_tree.topLevelItem(i)
+            if item.data(0, Qt.ItemDataRole.UserRole) == "collections":
+                # Save overall collections expansion
+                self.collection_expansion_state["collections"] = item.isExpanded()
+                
+                # Save individual collection expansion states
+                for j in range(item.childCount()):
+                    child = item.child(j)
+                    item_id = child.data(0, Qt.ItemDataRole.UserRole)
+                    if item_id and item_id.startswith("collection:"):
+                        collection_name = item_id.split(":", 1)[1]
+                        self.collection_expansion_state[f"collection:{collection_name}"] = child.isExpanded()
+                break
+
     def handle_list_double_clicked(self, item: QTreeWidgetItem, column: int) -> None:
         """
         Handle double-clicking on a list item.
@@ -560,7 +579,7 @@ class SidebarManager(QScrollArea):
             open_action.triggered.connect(lambda: self.open_list.emit(file_path))
             menu.addAction(open_action)
             
-            # Add "Add to / Remove from Liked Lists" (Spotify terminology)
+            # Add "Add to / Remove from Liked Lists"
             if is_favorite:
                 favorite_action = QAction("Remove from Liked Lists", menu)
             else:
@@ -568,8 +587,8 @@ class SidebarManager(QScrollArea):
             favorite_action.triggered.connect(lambda: self.toggle_favorite(file_path))
             menu.addAction(favorite_action)
             
-            # Add "Add to Folder" submenu (Spotify terminology)
-            add_to_collection_menu = QMenu("Add to Folder", menu)
+            # Add "Add to Collection" submenu
+            add_to_collection_menu = QMenu("Add to Collection", menu)
             add_to_collection_menu.setStyleSheet(menu.styleSheet())
             
             # Get all collections
@@ -581,9 +600,9 @@ class SidebarManager(QScrollArea):
                     lambda checked, cn=collection_name: self.add_to_collection(file_path, cn))
                 add_to_collection_menu.addAction(collection_action)
             
-            # Add "New Folder" action (Spotify terminology)
+            # Add "New Collection" action
             add_to_collection_menu.addSeparator()
-            new_collection_action = QAction("Create New Folder", add_to_collection_menu)
+            new_collection_action = QAction("Create New Collection", add_to_collection_menu)
             new_collection_action.triggered.connect(
                 lambda: self.create_new_collection_and_add(file_path))
             add_to_collection_menu.addAction(new_collection_action)
@@ -600,7 +619,7 @@ class SidebarManager(QScrollArea):
         
         elif item_type == "add_collection":
             # "Add Collection" item context menu
-            create_action = QAction("Create New Folder", menu)  # Spotify terminology
+            create_action = QAction("Create New Collection", menu)
             create_action.triggered.connect(self.create_new_collection)
             menu.addAction(create_action)
         
@@ -620,7 +639,7 @@ class SidebarManager(QScrollArea):
         
         elif item_type == "collections":
             # Collections top-level item context menu
-            add_action = QAction("Create New Folder", menu)  # Spotify terminology
+            add_action = QAction("Create New Collection", menu)
             add_action.triggered.connect(self.create_new_collection)
             menu.addAction(add_action)
         
@@ -653,9 +672,13 @@ class SidebarManager(QScrollArea):
     def create_new_collection(self) -> None:
         """Create a new collection."""
         name, ok = QInputDialog.getText(
-            self, "Create Folder", "Folder name:")  # Spotify terminology
+            self, "Create Collection", "Collection name:")  # Changed from "Folder"
         
         if ok and name:
+            # Remember expansion state before refreshing
+            if hasattr(self, 'remember_collection_expansion_state'):
+                self.remember_collection_expansion_state()
+                
             self.list_repository.create_collection(name)
             self.refresh_lists()
             
@@ -681,7 +704,7 @@ class SidebarManager(QScrollArea):
             file_path: Path to the list file
         """
         name, ok = QInputDialog.getText(
-            self, "Create Folder", "Folder name:")  # Spotify terminology
+            self, "Create Collection", "Collection name:")  # Changed from "Folder"
         
         if ok and name:
             self.list_repository.create_collection(name)
@@ -691,8 +714,9 @@ class SidebarManager(QScrollArea):
             # Show confirmation message
             QMessageBox.information(
                 self, "Success", 
-                f"Added list to new folder '{name}'")  # Spotify terminology
+                f"Added list to new collection '{name}'")  # Changed terminology
     
+
     def rename_collection(self, collection_name: str) -> None:
         """
         Rename a collection.
@@ -701,16 +725,20 @@ class SidebarManager(QScrollArea):
             collection_name: Current name of the collection
         """
         new_name, ok = QInputDialog.getText(
-            self, "Rename Folder", "New name:", text=collection_name)  # Spotify terminology
+            self, "Rename Collection", "New name:", text=collection_name)  # Changed terminology
         
         if ok and new_name and new_name != collection_name:
+            # Remember expansion state before refreshing
+            if hasattr(self, 'remember_collection_expansion_state'):
+                self.remember_collection_expansion_state()
+                
             success = self.list_repository.rename_collection(collection_name, new_name)
             if success:
                 self.refresh_lists()
             else:
                 QMessageBox.warning(
                     self, "Rename Failed", 
-                    "Could not rename folder. A folder with that name may already exist.")  # Spotify terminology
+                    "Could not rename collection. A collection with that name may already exist.")
     
     def delete_collection(self, collection_name: str) -> None:
         """
@@ -720,14 +748,18 @@ class SidebarManager(QScrollArea):
             collection_name: Name of the collection
         """
         reply = QMessageBox.question(
-            self, "Delete Folder",  # Spotify terminology
-            f"Are you sure you want to delete the folder '{collection_name}'?\n\n"
-            "The lists in the folder will not be deleted.",
+            self, "Delete Collection",  # Changed terminology
+            f"Are you sure you want to delete the collection '{collection_name}'?\n\n"
+            "The lists in the collection will not be deleted.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No
         )
         
         if reply == QMessageBox.StandardButton.Yes:
+            # Remember expansion state before refreshing
+            if hasattr(self, 'remember_collection_expansion_state'):
+                self.remember_collection_expansion_state()
+                
             success = self.list_repository.delete_collection(collection_name)
             if success:
                 self.refresh_lists()

@@ -9,8 +9,8 @@ import os
 import json
 import base64
 from datetime import datetime, date
-from typing import List, Dict, Any, Optional, Tuple
-from pathlib import Path
+from typing import List, Dict, Any, Tuple
+
 
 from models.album import Album
 

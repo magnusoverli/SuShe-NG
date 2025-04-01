@@ -4,8 +4,8 @@ Main window view for the SuShe NG application with Spotify-like design.
 
 import os
 import base64
-from datetime import date, datetime
-from typing import List, Optional
+from datetime import datetime
+from typing import Optional
 
 from PyQt6.QtGui import (QAction, QIcon, QCloseEvent, QPixmap, QColor,
                     QPainter, QPen, QPainterPath, QFont, QImage)
@@ -16,7 +16,6 @@ from PyQt6.QtWidgets import (QMainWindow, QTableView, QStatusBar, QSplitter,
 from PyQt6.QtCore import (Qt, QEvent, QRect, QRectF)
 from views.import_dialog import show_import_dialog
 from utils.album_list_manager import AlbumListManager
-from models.album import Album
 from models.album_table_model import AlbumTableModel
 from utils.theme import SpotifyTheme
 from utils.config import Config
@@ -378,70 +377,57 @@ class MainWindow(QMainWindow):
                 collections = self.list_repository.get_collections()
                 collection_names = list(collections.keys())
                 
-                # Import the collection selection dialog
-                from views.collection_selection_dialog import select_collection
+                # Import the new list dialog
+                from views.new_list_dialog import show_new_list_dialog
                 
-                # Show the collection selection dialog
-                collection_name, is_new, ok = select_collection(
-                    collection_names,
-                    self,
-                    "New Album List",
-                    "Choose a collection for your new list:"
-                )
+                # Show the new list dialog with integrated collection selection
+                list_info = show_new_list_dialog(collection_names, self)
                 
-                if not ok:
+                if not list_info:
                     # User canceled
                     return
                 
                 # Create the new collection if needed
-                if is_new:
-                    self.list_repository.create_collection(collection_name)
-            
-            # Create a new empty list
-            self.albums = []
-            self.model = AlbumTableModel(self.albums)
-            self.table_view.setModel(self.model)
-            
-            # Set up the table again to ensure proper display
-            self.setup_enhanced_drag_drop()
-            
-            # Reset current file path
-            self.current_file_path = None
-            
-            # Ask for a list title
-            from PyQt6.QtWidgets import QInputDialog
-            list_title, ok = QInputDialog.getText(
-                self, "New List", "Enter a title for the list:", 
-                text="New Album List")
+                if list_info["is_new_collection"]:
+                    self.list_repository.create_collection(list_info["collection_name"])
                 
-            if not ok:
-                list_title = "Untitled List"
-            
-            # Reset metadata with the provided title
-            self.list_metadata = {
-                "title": list_title,
-                "description": f"Album list in collection: {collection_name}",
-                "date_created": datetime.now().isoformat(),
-                "date_modified": datetime.now().isoformat(),
-                "collection": collection_name  # Store collection information
-            }
-            
-            # Update window title
-            self.setWindowTitle(f"{list_title} - SuShe NG")
-            
-            # Update status bar
-            self.status_bar.showMessage(f"Created new album list in collection: {collection_name}")
-            
-            # Save the empty list to repository
-            self.save_to_repository()
-            
-            # Add to the selected collection
-            if self.current_file_path:
-                self.list_repository.add_to_collection(self.current_file_path, collection_name)
+                # Create a new empty list
+                self.albums = []
+                self.model = AlbumTableModel(self.albums)
+                self.table_view.setModel(self.model)
                 
-            # Refresh the sidebar if it exists
-            if hasattr(self, 'sidebar_manager'):
-                self.sidebar_manager.refresh_lists()
+                # Set up the table again to ensure proper display
+                self.setup_enhanced_drag_drop()
+                
+                # Reset current file path
+                self.current_file_path = None
+                
+                # Set metadata with the provided information
+                self.list_metadata = {
+                    "title": list_info["title"],
+                    "description": list_info["description"],
+                    "date_created": datetime.now().isoformat(),
+                    "date_modified": datetime.now().isoformat(),
+                    "collection": list_info["collection_name"]  # Store collection information
+                }
+                
+                # Update window title
+                self.setWindowTitle(f"{list_info['title']} - SuShe NG")
+                
+                # Update status bar
+                self.status_bar.showMessage(f"Created new album list in collection: {list_info['collection_name']}")
+                
+                # Save the empty list to repository - passing True to allow empty list
+                self.save_to_repository(allow_empty=True)
+                
+                # Add to the selected collection
+                if self.current_file_path:
+                    self.list_repository.add_to_collection(self.current_file_path, list_info["collection_name"])
+                    
+                # Refresh the sidebar if it exists
+                if hasattr(self, 'sidebar_manager'):
+                    self.sidebar_manager.refresh_lists()
+            
         except Exception as e:
             import traceback
             print(f"Error creating new file: {e}")
@@ -451,7 +437,6 @@ class MainWindow(QMainWindow):
                 "Error",
                 f"An error occurred while creating a new list: {str(e)}"
             )
-
 
     def _import_list(self):
         """Import an album list from a file."""
@@ -879,16 +864,17 @@ class MainWindow(QMainWindow):
         
         self.status_bar.showMessage(f"List deleted")
 
-    def save_to_repository(self, existing_path: str = None) -> None:
+    def save_to_repository(self, existing_path: str = None, allow_empty: bool = False) -> None:
         """
         Save the current album list to the repository.
         
         Args:
             existing_path: Path to existing file (optional)
+            allow_empty: Whether to allow saving empty lists (for new list creation)
         """
         try:
-            # Make sure we have albums and metadata
-            if not hasattr(self, 'albums') or not self.albums:
+            # Make sure we have albums and metadata, but allow empty albums if specified
+            if not hasattr(self, 'albums') or (not self.albums and not allow_empty):
                 QMessageBox.warning(
                     self,
                     "Save Warning",

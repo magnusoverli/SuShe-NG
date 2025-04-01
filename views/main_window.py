@@ -859,21 +859,9 @@ class MainWindow(QMainWindow):
         self.sidebar_manager.create_new_list.connect(self._new_file)
         self.sidebar_manager.import_list.connect(self._import_list)
         self.sidebar_manager.open_list.connect(self.open_album_list)
-        self.sidebar_manager.favorite_toggled.connect(self._on_favorite_toggled)
         self.sidebar_manager.list_deleted.connect(self._on_list_deleted)
         
         return self.sidebar_manager
-
-    def _on_favorite_toggled(self, file_path: str, is_favorite: bool) -> None:
-        """
-        Handle toggling favorite status for a list.
-        
-        Args:
-            file_path: Path to the list file
-            is_favorite: Whether the list is now a favorite
-        """
-        status = "added to" if is_favorite else "removed from"
-        self.status_bar.showMessage(f"List {status} favorites")
 
 
     def _on_list_deleted(self, file_path: str) -> None:

@@ -250,12 +250,6 @@ class SidebarListItem(QTreeWidgetItem):
         # Store the list info
         self.list_info = list_info
         
-        # Set favorite icon if needed
-        if list_info.get("is_favorite", False):
-            # Set text color to Spotify green for favorites
-            self.setForeground(0, QColor(29, 185, 84))  # Spotify green
-            self.setText(0, "♥ " + list_info.get("title", "Untitled List"))
-        
         # Add album count in parentheses
         album_count = list_info.get("album_count", 0)
         if album_count > 0:
@@ -283,7 +277,6 @@ class SidebarManager(QScrollArea):
     create_new_list = pyqtSignal()  # Signal emitted when the user wants to create a new list
     import_list = pyqtSignal()  # Signal emitted when the user wants to import a list
     open_list = pyqtSignal(str)  # Signal emitted when a list should be opened (file_path)
-    favorite_toggled = pyqtSignal(str, bool)  # Signal emitted when a list is favorited/unfavorited (file_path, is_favorite)
     list_deleted = pyqtSignal(str)  # Signal emitted when a list is deleted (file_path)
     
     def __init__(self, list_repository: ListRepository, parent=None):
@@ -329,8 +322,8 @@ class SidebarManager(QScrollArea):
         # Create library section
         self.create_library_section()
         
-        # Add a stretcher to push the button to the bottom
-        self.sidebar_layout.addStretch(1)
+        # Remove the stretcher that was here
+        # self.sidebar_layout.addStretch(1)
         
         # Add "Create List" button like Spotify's "Create Playlist"
         self.create_button = SpotifyCreateButton("Create List")
@@ -432,8 +425,8 @@ class SidebarManager(QScrollArea):
         tree_font = QFont("Gotham", 12)
         self.lists_tree.setFont(tree_font)
         
-        # Add the tree widget to the layout
-        self.sidebar_layout.addWidget(self.lists_tree, 0)  # Give it stretch factor for expansion
+        # Add the tree widget to the layout with stretch factor 1 to make it expand
+        self.sidebar_layout.addWidget(self.lists_tree, 1)  # Change from 0 to 1
         
         # Populate the lists
         self.refresh_lists()
@@ -473,16 +466,7 @@ class SidebarManager(QScrollArea):
         for list_info in recent_lists:
             SidebarListItem(list_info, recent_lists_item)
         
-        # Add "Favorites" top-level item
-        favorites_item = QTreeWidgetItem(self.lists_tree)
-        favorites_item.setText(0, "Liked Lists")
-        favorites_item.setData(0, Qt.ItemDataRole.UserRole, "favorites")
-        favorites_item.setFont(0, QFont("Gotham", 12, QFont.Weight.Medium))
-        
-        # Add favorite lists
-        favorite_lists = self.list_repository.get_favorite_lists()
-        for list_info in favorite_lists:
-            SidebarListItem(list_info, favorites_item)
+        # Removed "Liked Lists" section
         
         # Add "Collections" top-level item
         collections_item = QTreeWidgetItem(self.lists_tree)
@@ -507,13 +491,6 @@ class SidebarManager(QScrollArea):
             # Add lists to the collection
             for list_info in collection_lists:
                 SidebarListItem(list_info, collection_item)
-        
-        # Always add "Create collection" item, even if there are no collections
-        add_collection_item = QTreeWidgetItem(collections_item)
-        add_collection_item.setText(0, "Create collection")
-        add_collection_item.setData(0, Qt.ItemDataRole.UserRole, "add_collection")
-        add_collection_item.setForeground(0, QColor(179, 179, 179))
-        add_collection_item.setFont(0, QFont("Gotham", 11, QFont.Weight.Normal))
         
         # Restore expansion state
         for i in range(self.lists_tree.topLevelItemCount()):
@@ -573,10 +550,7 @@ class SidebarManager(QScrollArea):
         # Get the item type
         item_type = item.data(0, Qt.ItemDataRole.UserRole)
         
-        if item_type == "add_collection":
-            # Create a new collection
-            self.create_new_collection()
-        elif isinstance(item, SidebarListItem):
+        if isinstance(item, SidebarListItem):
             # Open the list
             file_path = item.list_info.get("file_path")
             if file_path:
@@ -626,20 +600,13 @@ class SidebarManager(QScrollArea):
         if isinstance(item, SidebarListItem):
             # List item context menu
             file_path = item.list_info.get("file_path")
-            is_favorite = item.list_info.get("is_favorite", False)
             
             # Add "Open" action
             open_action = QAction("Open", menu)
             open_action.triggered.connect(lambda: self.open_list.emit(file_path))
             menu.addAction(open_action)
             
-            # Add "Add to / Remove from Liked Lists"
-            if is_favorite:
-                favorite_action = QAction("Remove from Liked Lists", menu)
-            else:
-                favorite_action = QAction("Add to Liked Lists", menu)
-            favorite_action.triggered.connect(lambda: self.toggle_favorite(file_path))
-            menu.addAction(favorite_action)
+            # Removed "Add to / Remove from Liked Lists" action
             
             # Add "Add to Collection" submenu
             add_to_collection_menu = QMenu("Add to Collection", menu)
@@ -671,12 +638,6 @@ class SidebarManager(QScrollArea):
             delete_action.triggered.connect(lambda: self.delete_list(file_path))
             menu.addAction(delete_action)
         
-        elif item_type == "add_collection":
-            # "Add Collection" item context menu
-            create_action = QAction("Create New Collection", menu)
-            create_action.triggered.connect(self.create_new_collection)
-            menu.addAction(create_action)
-        
         elif item_type and item_type.startswith("collection:"):
             # Collection item context menu
             collection_name = item_type.split(":", 1)[1]
@@ -700,17 +661,6 @@ class SidebarManager(QScrollArea):
         # Show the menu if it has actions
         if not menu.isEmpty():
             menu.exec(QCursor.pos())
-    
-    def toggle_favorite(self, file_path: str) -> None:
-        """
-        Toggle the favorite status of a list.
-        
-        Args:
-            file_path: Path to the list file
-        """
-        is_favorite = self.list_repository.toggle_favorite(file_path)
-        self.favorite_toggled.emit(file_path, is_favorite)
-        self.refresh_lists()
     
     def add_to_collection(self, file_path: str, collection_name: str) -> None:
         """

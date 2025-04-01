@@ -329,6 +329,9 @@ class SidebarManager(QScrollArea):
         # Create library section
         self.create_library_section()
         
+        # Add a stretcher to push the button to the bottom
+        self.sidebar_layout.addStretch(1)
+        
         # Add "Create List" button like Spotify's "Create Playlist"
         self.create_button = SpotifyCreateButton("Create List")
         self.create_button.clicked.connect(self.create_new_list.emit)
@@ -338,13 +341,53 @@ class SidebarManager(QScrollArea):
         # Set the widget
         self.setWidget(self.sidebar_widget)
 
-        # Load CSS from file
+        # Load CSS from file with better error handling
         from PyQt6.QtCore import QFile, QTextStream
-        css_file = QFile("views/resources/spotify_sidebar.css")
+        import os
+        
+        # Try different paths to find the CSS file
+        css_path = "views/resources/spotify_sidebar.css"
+        if not os.path.exists(css_path):
+            # Try alternative path relative to the current file
+            alt_path = os.path.join(os.path.dirname(__file__), "resources", "spotify_sidebar.css")
+            if os.path.exists(alt_path):
+                css_path = alt_path
+            else:
+                try:
+                    from resources import get_resource_path
+                    alt_path2 = get_resource_path("spotify_sidebar.css")
+                    if os.path.exists(alt_path2):
+                        css_path = alt_path2
+                except Exception as e:
+                    print(f"Error getting resource path: {e}")
+        
+        # Load CSS from file
+        css_file = QFile(css_path)
         if css_file.open(QFile.OpenModeFlag.ReadOnly | QFile.OpenModeFlag.Text):
             stream = QTextStream(css_file)
             self.setStyleSheet(stream.readAll())
             css_file.close()
+        else:
+            print(f"Warning: Could not open CSS file at {css_path}")
+            # Fall back to direct styling for the button
+            self.create_button.setStyleSheet("""
+                QPushButton {
+                    color: #000000;
+                    background-color: #FFFFFF;
+                    border: none;
+                    border-radius: 20px;
+                    padding: 8px 16px;
+                    font-weight: bold;
+                    margin: 16px 20px;
+                    min-height: 32px;
+                }
+                QPushButton:hover {
+                    background-color: #F0F0F0;
+                }
+                QPushButton:pressed {
+                    background-color: #E0E0E0;
+                }
+            """)
 
         # Set fixed width
         self.setFixedWidth(220)
@@ -390,7 +433,7 @@ class SidebarManager(QScrollArea):
         self.lists_tree.setFont(tree_font)
         
         # Add the tree widget to the layout
-        self.sidebar_layout.addWidget(self.lists_tree, 1)  # Give it stretch factor for expansion
+        self.sidebar_layout.addWidget(self.lists_tree, 0)  # Give it stretch factor for expansion
         
         # Populate the lists
         self.refresh_lists()
@@ -445,10 +488,13 @@ class SidebarManager(QScrollArea):
         collections_item = QTreeWidgetItem(self.lists_tree)
         collections_item.setText(0, "Collections")
         collections_item.setData(0, Qt.ItemDataRole.UserRole, "collections")
-        collections_item.setFont(0, QFont("Gotham", 12, QFont.Weight.Medium))
+        collections_item.setFont(0, QFont("Gotham", 12, QFont.Weight.Bold))  # Make it bold to stand out
+        
+        # Get collections
+        collections = self.list_repository.get_collections()
+        print(f"Refreshing collections: {collections.keys()}")  # Debug output
         
         # Add collections and their lists
-        collections = self.list_repository.get_collections()
         collection_items = {}
         for collection_name, collection_lists in collections.items():
             # Create the collection item
@@ -462,7 +508,7 @@ class SidebarManager(QScrollArea):
             for list_info in collection_lists:
                 SidebarListItem(list_info, collection_item)
         
-        # Add "Add Collection" item to collections
+        # Always add "Create collection" item, even if there are no collections
         add_collection_item = QTreeWidgetItem(collections_item)
         add_collection_item.setText(0, "Create collection")
         add_collection_item.setData(0, Qt.ItemDataRole.UserRole, "add_collection")
@@ -479,9 +525,17 @@ class SidebarManager(QScrollArea):
                 # Default expansion for items we've never seen before
                 item.setExpanded(True)
         
-        # Always make sure Collections is visible on first load if no saved state
-        if "collections" not in expansion_state:
-            collections_item.setExpanded(True)
+        # IMPORTANT: Always make Collections visible and expanded
+        collections_item.setExpanded(True)
+        
+        # Make sure the Collections section is always visible
+        self.lists_tree.scrollToItem(collections_item)
+        
+        # Highlight the Collections item to draw attention to it
+        self.lists_tree.setCurrentItem(collections_item)
+        
+        # Refresh the view to ensure everything is displayed properly
+        self.lists_tree.update()
 
 
     def remember_collection_expansion_state(self) -> None:

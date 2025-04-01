@@ -36,6 +36,13 @@ class ListRepository:
         # Initialize the repository metadata
         self.metadata = self._load_metadata()
         
+        # Ensure we have at least one default collection
+        if not self.metadata.get('collections', {}):
+            self.metadata['collections'] = {
+                "My Collection": []  # Create a default empty collection
+            }
+            self._save_metadata()
+        
         # Album list manager for importing/exporting
         self.list_manager = AlbumListManager()
         
@@ -44,6 +51,7 @@ class ListRepository:
         print(f"Lists directory: {self.lists_dir}")
         print(f"Collections directory: {self.collections_dir}")
         print(f"Loaded metadata with {len(self.metadata.get('collections', {}))} collections")
+        print(f"Available collections: {list(self.metadata.get('collections', {}).keys())}")
     
     def _get_base_directory(self) -> str:
         """
@@ -172,6 +180,7 @@ class ListRepository:
         return favorite_lists
     
 
+
     def get_collections(self) -> Dict[str, List[Dict[str, Any]]]:
         """
         Get all collections and their lists.
@@ -180,6 +189,20 @@ class ListRepository:
             A dictionary mapping collection names to lists of list information
         """
         collections = {}
+        
+        # Ensure metadata has a collections entry
+        if 'collections' not in self.metadata:
+            self.metadata['collections'] = {}
+            self._save_metadata()
+        
+        # Create a default collection if none exist
+        if not self.metadata['collections']:
+            self.metadata['collections'] = {"My Collection": []}
+            self._save_metadata()
+            print("Created default 'My Collection' as no collections existed")
+        
+        # Debug print
+        print(f"Getting collections from metadata: {list(self.metadata.get('collections', {}).keys())}")
         
         for collection_name, list_paths in self.metadata.get("collections", {}).items():
             collection_lists = []

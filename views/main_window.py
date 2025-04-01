@@ -359,47 +359,98 @@ class MainWindow(QMainWindow):
 
     def _new_file(self):
         """Create a new empty album list."""
-        # Ask confirmation if there are unsaved changes
-        if hasattr(self, 'albums') and self.albums:
-            result = QMessageBox.question(
-                self,
-                "New Album List",
-                "Do you want to create a new album list? Any unsaved changes will be lost.",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No
-            )
+        try:
+            # Ask confirmation if there are unsaved changes
+            if hasattr(self, 'albums') and self.albums:
+                result = QMessageBox.question(
+                    self,
+                    "New Album List",
+                    "Do you want to create a new album list? Any unsaved changes will be lost.",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No
+                )
+                
+                if result != QMessageBox.StandardButton.Yes:
+                    return
             
-            if result != QMessageBox.StandardButton.Yes:
-                return
-        
-        # Create a new empty list
-        self.albums = []
-        self.model = AlbumTableModel(self.albums)
-        self.table_view.setModel(self.model)
-        
-        # Set up the table again to ensure proper display
-        self.setup_enhanced_drag_drop()
-        
-        # Reset current file path
-        self.current_file_path = None
-        
-        # Reset metadata
-        self.list_metadata = {
-            "title": "Untitled List",
-            "description": "New album list",
-            "date_created": datetime.now().isoformat(),
-            "date_modified": datetime.now().isoformat()
-        }
-        
-        # Update window title
-        self.setWindowTitle("Untitled List - SuShe NG")
-        
-        # Update status bar
-        self.status_bar.showMessage("Created new album list")
-        
-        # Refresh the sidebar if it exists
-        if hasattr(self, 'sidebar_manager'):
-            self.sidebar_manager.refresh_lists()
+            # Get collections from repository
+            if hasattr(self, 'list_repository') and self.list_repository:
+                collections = self.list_repository.get_collections()
+                collection_names = list(collections.keys())
+                
+                # Import the collection selection dialog
+                from views.collection_selection_dialog import select_collection
+                
+                # Show the collection selection dialog
+                collection_name, is_new, ok = select_collection(
+                    collection_names,
+                    self,
+                    "New Album List",
+                    "Choose a collection for your new list:"
+                )
+                
+                if not ok:
+                    # User canceled
+                    return
+                
+                # Create the new collection if needed
+                if is_new:
+                    self.list_repository.create_collection(collection_name)
+            
+            # Create a new empty list
+            self.albums = []
+            self.model = AlbumTableModel(self.albums)
+            self.table_view.setModel(self.model)
+            
+            # Set up the table again to ensure proper display
+            self.setup_enhanced_drag_drop()
+            
+            # Reset current file path
+            self.current_file_path = None
+            
+            # Ask for a list title
+            from PyQt6.QtWidgets import QInputDialog
+            list_title, ok = QInputDialog.getText(
+                self, "New List", "Enter a title for the list:", 
+                text="New Album List")
+                
+            if not ok:
+                list_title = "Untitled List"
+            
+            # Reset metadata with the provided title
+            self.list_metadata = {
+                "title": list_title,
+                "description": f"Album list in collection: {collection_name}",
+                "date_created": datetime.now().isoformat(),
+                "date_modified": datetime.now().isoformat(),
+                "collection": collection_name  # Store collection information
+            }
+            
+            # Update window title
+            self.setWindowTitle(f"{list_title} - SuShe NG")
+            
+            # Update status bar
+            self.status_bar.showMessage(f"Created new album list in collection: {collection_name}")
+            
+            # Save the empty list to repository
+            self.save_to_repository()
+            
+            # Add to the selected collection
+            if self.current_file_path:
+                self.list_repository.add_to_collection(self.current_file_path, collection_name)
+                
+            # Refresh the sidebar if it exists
+            if hasattr(self, 'sidebar_manager'):
+                self.sidebar_manager.refresh_lists()
+        except Exception as e:
+            import traceback
+            print(f"Error creating new file: {e}")
+            traceback.print_exc()
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"An error occurred while creating a new list: {str(e)}"
+            )
 
 
     def _import_list(self):
@@ -415,13 +466,46 @@ class MainWindow(QMainWindow):
             
             if not file_path:
                 return
-                
+                    
             # Import the file into the repository
             if hasattr(self, 'list_repository') and self.list_repository:
+                # Get collections from repository
+                collections = self.list_repository.get_collections()
+                collection_names = list(collections.keys())
+                
+                # Import the collection selection dialog
+                from views.collection_selection_dialog import select_collection
+                
+                # Show the collection selection dialog
+                collection_name, is_new, ok = select_collection(
+                    collection_names,
+                    self,
+                    "Import Album List",
+                    "Choose a collection for the imported list:"
+                )
+                
+                if not ok:
+                    # User canceled
+                    return
+                
+                # Create the new collection if needed
+                if is_new:
+                    self.list_repository.create_collection(collection_name)
+                    
+                # Import the file
                 imported_path = self.list_repository.import_external_list(file_path)
                 if imported_path:
+                    # Add to the selected collection
+                    self.list_repository.add_to_collection(imported_path, collection_name)
+                    
+                    # Open the imported list
                     self.open_album_list(imported_path)
-                    self.status_bar.showMessage(f"Imported list from {file_path}")
+                    
+                    # Add collection info to the metadata
+                    if hasattr(self, 'list_metadata'):
+                        self.list_metadata["collection"] = collection_name
+                    
+                    self.status_bar.showMessage(f"Imported list from {file_path} to collection: {collection_name}")
                     
                     # Refresh the sidebar
                     if hasattr(self, 'sidebar_manager'):
@@ -429,14 +513,16 @@ class MainWindow(QMainWindow):
             else:
                 # Fallback to old import method
                 self.open_album_list(file_path)
-                
+                    
         except Exception as e:
+            import traceback
+            print(f"Error importing list: {e}")
+            traceback.print_exc()
             QMessageBox.critical(
                 self,
                 "Import Error",
                 f"An error occurred while importing: {str(e)}"
             )
-
 
     def _export_list(self):
         """
@@ -846,17 +932,73 @@ class MainWindow(QMainWindow):
             # Store the current file path
             self.current_file_path = file_path
             
+            # Check if this list is in a collection, and add it if not
+            if "collection" in self.list_metadata:
+                # Add to the specified collection
+                collection_name = self.list_metadata["collection"]
+                self.list_repository.add_to_collection(file_path, collection_name)
+            else:
+                # No collection specified, check if it's in any collection
+                collections = self.list_repository.get_collections()
+                found_in_collection = False
+                
+                for collection_name, collection_lists in collections.items():
+                    for list_info in collection_lists:
+                        if list_info.get("file_path") == file_path:
+                            found_in_collection = True
+                            # Store the collection info for future saves
+                            self.list_metadata["collection"] = collection_name
+                            break
+                    if found_in_collection:
+                        break
+                        
+                if not found_in_collection:
+                    # Not in any collection, ask user to select one
+                    collection_names = list(collections.keys())
+                    
+                    # Import the collection selection dialog
+                    from views.collection_selection_dialog import select_collection
+                    
+                    # Show the collection selection dialog
+                    collection_name, is_new, ok = select_collection(
+                        collection_names,
+                        self,
+                        "Save Album List",
+                        "This list is not in any collection. Choose a collection for it:"
+                    )
+                    
+                    if not ok:
+                        # Default to creating a new collection based on the list name
+                        collection_name = f"{self.list_metadata.get('title', 'My')} Collection"
+                        is_new = True
+                    
+                    # Create the new collection if needed
+                    if is_new:
+                        self.list_repository.create_collection(collection_name)
+                    
+                    # Add to the selected collection
+                    self.list_repository.add_to_collection(file_path, collection_name)
+                    # Store for future saves
+                    self.list_metadata["collection"] = collection_name
+            
             # Update window title
             list_title = self.list_metadata.get("title", "Untitled List")
             self.setWindowTitle(f"{list_title} - SuShe NG")
             
             # Update the status bar
-            self.status_bar.showMessage(f"Saved {len(self.albums)} albums to repository")
+            collection_name = self.list_metadata.get("collection", "")
+            if collection_name:
+                self.status_bar.showMessage(f"Saved {len(self.albums)} albums to collection: {collection_name}")
+            else:
+                self.status_bar.showMessage(f"Saved {len(self.albums)} albums to repository")
             
             # Refresh the sidebar
             self.sidebar_manager.refresh_lists()
                 
         except Exception as e:
+            import traceback
+            print(f"Error saving to repository: {e}")
+            traceback.print_exc()
             # Show error message
             QMessageBox.critical(
                 self,

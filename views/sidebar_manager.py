@@ -8,26 +8,15 @@ from typing import Dict, Any
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QPushButton, 
                            QScrollArea, QFrame, QMenu, QInputDialog,
                            QMessageBox, QTreeWidget, QTreeWidgetItem,
-                           QHBoxLayout)
-from PyQt6.QtCore import Qt, pyqtSignal, QPoint, QTimer
-from PyQt6.QtGui import QIcon, QAction, QFont, QCursor, QColor, QPainter, QPixmap
+                           QHBoxLayout, QStyledItemDelegate, QStyleOptionViewItem)
+from PyQt6.QtCore import Qt, pyqtSignal, QPoint, QRect
+from PyQt6.QtGui import QIcon, QAction, QFont, QCursor, QColor, QPainter, QPixmap, QBrush
 
 from utils.list_repository import ListRepository
 
 
 class SpotifyIconProvider:
-    """Provider for Spotify-style icons using text characters."""
-    
-    # Icon unicode characters
-    HOME = "🏠"
-    SEARCH = "🔍"
-    LIBRARY = "📚"
-    PLUS = "+"
-    MUSIC = "♪"
-    HEART = "♥"
-    HEART_FILLED = "❤"
-    SETTINGS = "⚙"
-    COLLECTION = "📁"
+    """Provider for Spotify-style SVG icons."""
     
     @classmethod
     def get_icon(cls, name: str, color: QColor = QColor(179, 179, 179), size: int = 16) -> QIcon:
@@ -42,43 +31,58 @@ class SpotifyIconProvider:
         Returns:
             QIcon with the requested icon
         """
-        # Get the icon character
-        char = cls.HOME
-        if name == "home":
-            char = cls.HOME
-        elif name == "search":
-            char = cls.SEARCH
-        elif name == "library":
-            char = cls.LIBRARY
-        elif name == "plus":
-            char = cls.PLUS
-        elif name == "music":
-            char = cls.MUSIC
-        elif name == "heart":
-            char = cls.HEART
-        elif name == "heart-filled":
-            char = cls.HEART_FILLED
-        elif name == "settings":
-            char = cls.SETTINGS
-        elif name == "collection":
-            char = cls.COLLECTION
+        # Path to SVG icons
+        from resources import get_resource_path, resource_exists
         
-        # Create a pixmap
-        pixmap = QPixmap(size, size)
-        pixmap.fill(Qt.GlobalColor.transparent)
+        icon_path = f"icons/{name}.svg"
+        if resource_exists(icon_path):
+            full_path = get_resource_path(icon_path)
+            icon = QIcon(full_path)
+        else:
+            # Fallback to text-based icons if SVG not found
+            char = cls._get_fallback_char(name)
+            
+            # Create a pixmap
+            pixmap = QPixmap(size, size)
+            pixmap.fill(Qt.GlobalColor.transparent)
+            
+            # Draw the icon
+            painter = QPainter(pixmap)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
+            painter.setPen(color)
+            painter.setFont(QFont("Segoe UI", int(size * 0.75)))
+            painter.drawText(pixmap.rect(), Qt.AlignmentFlag.AlignCenter, char)
+            painter.end()
+            
+            icon = QIcon(pixmap)
         
-        # Draw the icon
-        painter = QPainter(pixmap)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
-        painter.setPen(color)
-        # Convert float to int for font size - fixes the error
-        painter.setFont(QFont("Segoe UI", int(size * 0.75)))
-        painter.drawText(pixmap.rect(), Qt.AlignmentFlag.AlignCenter, char)
-        painter.end()
-        
-        return QIcon(pixmap)
+        return icon
 
+    # New method to add to SpotifyIconProvider class
+    @staticmethod
+    def _get_fallback_char(name: str) -> str:
+        """Get fallback text character for an icon name."""
+        if name == "home":
+            return "🏠"
+        elif name == "search":
+            return "🔍"
+        elif name == "library":
+            return "📚"
+        elif name == "plus":
+            return "+"
+        elif name == "music":
+            return "♪"
+        elif name == "heart":
+            return "♥"
+        elif name == "heart-filled":
+            return "❤"
+        elif name == "settings":
+            return "⚙"
+        elif name == "collection":
+            return "📁"
+        else:
+            return "•"
 
 class SpotifyNav(QFrame):
     """A Spotify-style navigation item."""
@@ -289,6 +293,9 @@ class SidebarManager(QScrollArea):
         # Store the list repository
         self.list_repository = list_repository
         
+        # Initialize tree_states dictionary
+        self.tree_states = {}
+        
         # Set up the scroll area
         self.setWidgetResizable(True)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -319,9 +326,6 @@ class SidebarManager(QScrollArea):
         # Create library section
         self.create_library_section()
         
-        # Remove the stretcher that was here
-        # self.sidebar_layout.addStretch(1)
-        
         # Add "Create List" button like Spotify's "Create Playlist"
         self.create_button = SpotifyCreateButton("Create List")
         self.create_button.clicked.connect(self.create_new_list.emit)
@@ -331,56 +335,82 @@ class SidebarManager(QScrollArea):
         # Set the widget
         self.setWidget(self.sidebar_widget)
 
-        # Load CSS from file with better error handling
-        from PyQt6.QtCore import QFile, QTextStream
-        import os
-        
-        # Try different paths to find the CSS file
-        css_path = "views/resources/spotify_sidebar.css"
-        if not os.path.exists(css_path):
-            # Try alternative path relative to the current file
-            alt_path = os.path.join(os.path.dirname(__file__), "resources", "spotify_sidebar.css")
-            if os.path.exists(alt_path):
-                css_path = alt_path
-            else:
-                try:
-                    from resources import get_resource_path
-                    alt_path2 = get_resource_path("spotify_sidebar.css")
-                    if os.path.exists(alt_path2):
-                        css_path = alt_path2
-                except Exception as e:
-                    print(f"Error getting resource path: {e}")
-        
-        # Load CSS from file
-        css_file = QFile(css_path)
-        if css_file.open(QFile.OpenModeFlag.ReadOnly | QFile.OpenModeFlag.Text):
-            stream = QTextStream(css_file)
-            self.setStyleSheet(stream.readAll())
-            css_file.close()
-        else:
-            print(f"Warning: Could not open CSS file at {css_path}")
-            # Fall back to direct styling for the button
-            self.create_button.setStyleSheet("""
-                QPushButton {
-                    color: #000000;
-                    background-color: #FFFFFF;
-                    border: none;
-                    border-radius: 20px;
-                    padding: 8px 16px;
-                    font-weight: bold;
-                    margin: 16px 20px;
-                    min-height: 32px;
-                }
-                QPushButton:hover {
-                    background-color: #F0F0F0;
-                }
-                QPushButton:pressed {
-                    background-color: #E0E0E0;
-                }
-            """)
+        # Load stylesheet using our reliable method
+        self.load_sidebar_stylesheet()
 
-        # Set fixed width
-        self.setFixedWidth(220)
+        # Get sidebar width from config
+        sidebar_width = 220  # Default width
+        
+        if hasattr(list_repository, 'config'):
+            config_width = list_repository.config.get("sidebar/width")
+            if config_width is not None:
+                try:
+                    sidebar_width = int(config_width)
+                except (ValueError, TypeError):
+                    # If config value isn't a valid integer, use default
+                    sidebar_width = 220
+        
+        # Set the sidebar width
+        self.setFixedWidth(sidebar_width)
+
+    def _update_expansion_indicators(self):
+        """Update the expansion indicator state for all items."""
+        # Update top-level items
+        for i in range(self.lists_tree.topLevelItemCount()):
+            item = self.lists_tree.topLevelItem(i)
+            item.setData(0, Qt.ItemDataRole.UserRole + 1, item.isExpanded())
+            
+            # Update children
+            for j in range(item.childCount()):
+                child = item.child(j)
+                child.setData(0, Qt.ItemDataRole.UserRole + 1, child.isExpanded())
+
+    def load_sidebar_stylesheet(self):
+        """Load the sidebar stylesheet in a reliable way."""
+        try:
+            # Use the resource module to get the path
+            from resources import get_resource_path
+            import os
+            
+            # First try to get the file through the resource system
+            css_path = get_resource_path("spotify_sidebar.css")
+            
+            # If that fails, try looking in views/resources
+            if not os.path.exists(css_path):
+                # Try the views/resources directory
+                module_dir = os.path.dirname(__file__)
+                css_path = os.path.join(module_dir, "resources", "spotify_sidebar.css")
+            
+            # Load the stylesheet
+            if os.path.exists(css_path):
+                with open(css_path, 'r', encoding='utf-8') as f:
+                    self.setStyleSheet(f.read())
+                    return True
+            else:
+                print(f"Warning: Could not find CSS file at any location")
+                # Fall back to direct styling for the button
+                self.create_button.setStyleSheet("""
+                    QPushButton {
+                        color: #000000;
+                        background-color: #FFFFFF;
+                        border: none;
+                        border-radius: 20px;
+                        padding: 8px 16px;
+                        font-weight: bold;
+                        margin: 16px 20px;
+                        min-height: 32px;
+                    }
+                    QPushButton:hover {
+                        background-color: #F0F0F0;
+                    }
+                    QPushButton:pressed {
+                        background-color: #E0E0E0;
+                    }
+                """)
+                return False
+        except Exception as e:
+            print(f"Error loading sidebar stylesheet: {e}")
+            return False
     
     def create_navigation_section(self) -> None:
         """Create the Spotify-style navigation section."""
@@ -396,12 +426,65 @@ class SidebarManager(QScrollArea):
         
         # Add spacing after navigation items
         self.sidebar_layout.addSpacing(8)
-
-    def clear_selection_after_click(self, index):
-        """Clear selection after clicking to match Spotify's behavior."""
-        # Process the click first (to handle open/close etc.)
-        QTimer.singleShot(100, self.lists_tree.clearSelection)
-
+    
+    def refresh_lists(self) -> None:
+        """Refresh the lists displayed in the sidebar."""
+        # Save expansion state before refreshing
+        self.save_tree_state()
+        
+        # Clear the tree
+        self.lists_tree.clear()
+        
+        # 1. Add "Collections" at the top
+        collections_item = QTreeWidgetItem(self.lists_tree)
+        collections_item.setText(0, "Collections")
+        collections_item.setData(0, Qt.ItemDataRole.UserRole, "collections")
+        # Set visible indicator for expandable items
+        collections_item.setData(0, Qt.ItemDataRole.UserRole + 1, True)  # Show as expanded by default
+        collections_item.setFont(0, QFont("Segoe UI", 12, QFont.Weight.Bold))
+        
+        # Get collections
+        collections = self.list_repository.get_collections()
+        print(f"Refreshing collections: {collections.keys()}")  # Debug output
+        
+        # Add collections and their lists
+        collection_items = {}
+        for collection_name, collection_lists in collections.items():
+            # Create the collection item
+            collection_item = QTreeWidgetItem(collections_item)
+            collection_item.setText(0, collection_name)
+            collection_item.setData(0, Qt.ItemDataRole.UserRole, f"collection:{collection_name}")
+            # Set expansion indicator flag
+            collection_item.setData(0, Qt.ItemDataRole.UserRole + 1, False)  # Default collapsed
+            collection_item.setFont(0, QFont("Segoe UI", 11))
+            collection_items[collection_name] = collection_item
+            
+            # Add lists to the collection
+            for list_info in collection_lists:
+                SidebarListItem(list_info, collection_item)
+        
+        # 2. Add "Recent Lists" below Collections
+        recent_lists_item = QTreeWidgetItem(self.lists_tree)
+        recent_lists_item.setText(0, "Recent Lists")
+        recent_lists_item.setData(0, Qt.ItemDataRole.UserRole, "recent_lists")
+        # Set visible indicator for expandable items
+        recent_lists_item.setData(0, Qt.ItemDataRole.UserRole + 1, True)  # Show as expanded by default
+        recent_lists_item.setFont(0, QFont("Segoe UI", 12, QFont.Weight.Medium))
+        
+        # Add recent lists
+        recent_lists = self.list_repository.get_recent_lists()
+        for list_info in recent_lists:
+            SidebarListItem(list_info, recent_lists_item)
+        
+        # Restore expansion state
+        self.restore_tree_state()
+        
+        # Update expansion indicators based on current state
+        self._update_expansion_indicators()
+        
+        # Refresh the view
+        self.lists_tree.update()
+    
     def create_library_section(self) -> None:
         """Create the library section with Spotify styling."""
         # Create the library header with buttons
@@ -415,226 +498,173 @@ class SidebarManager(QScrollArea):
         self.lists_tree = QTreeWidget()
         self.lists_tree.setObjectName("spotifyLibraryTree")
         self.lists_tree.setHeaderHidden(True)
-        self.lists_tree.setIndentation(16)
+        self.lists_tree.setIndentation(20)  # Slightly increased for better visibility
         self.lists_tree.setFrameShape(QFrame.Shape.NoFrame)
         self.lists_tree.setSelectionMode(QTreeWidget.SelectionMode.SingleSelection)
         self.lists_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.lists_tree.customContextMenuRequested.connect(self.show_list_context_menu)
-        self.lists_tree.itemDoubleClicked.connect(self.handle_list_double_clicked)
         
-        # Important: disable automatic expand/collapse
+        # Connect to item clicked to handle expansion
+        self.lists_tree.itemClicked.connect(self.handle_item_clicked)
+        
+        # Important: disable automatic expand/collapse on double-click
+        # We'll handle expansions manually
         self.lists_tree.setExpandsOnDoubleClick(False)
         
+        # Connect to double click for opening lists
+        self.lists_tree.itemDoubleClicked.connect(self.handle_list_double_clicked)
+        
         # Apply Spotify font
-        tree_font = QFont("Gotham", 12)
+        tree_font = QFont("Segoe UI", 12)  # Using Segoe UI as more reliable fallback
         self.lists_tree.setFont(tree_font)
+        
+        # Set tree properties to show icons
+        self.lists_tree.setAnimated(True)
         
         # Add the tree widget to the layout with stretch factor 1
         self.sidebar_layout.addWidget(self.lists_tree, 1)
         
+        # Add custom drawing delegate for tree items
+        self.tree_delegate = SpotifyTreeDelegate()
+        self.lists_tree.setItemDelegate(self.tree_delegate)
+        
         # Populate the lists
         self.refresh_lists()
     
-    def refresh_lists(self) -> None:
-        """Refresh the lists displayed in the sidebar."""
-        # Save expansion state before refreshing
-        expansion_state = {}
-        if self.lists_tree.topLevelItemCount() > 0:
-            # Save expansion states for collections
-            for i in range(self.lists_tree.topLevelItemCount()):
-                top_item = self.lists_tree.topLevelItem(i)
-                top_id = top_item.data(0, Qt.ItemDataRole.UserRole)
-                if top_id:
-                    expansion_state[top_id] = top_item.isExpanded()
-                    
-                    # Also save individual collection states
-                    if top_id == "collections":
-                        for j in range(top_item.childCount()):
-                            col_item = top_item.child(j)
-                            col_id = col_item.data(0, Qt.ItemDataRole.UserRole)
-                            if col_id:
-                                expansion_state[col_id] = col_item.isExpanded()
+    def create_expansion_icons(self):
+        """Create chevron icons for tree expansion if they don't exist."""
+        import os
+        from PyQt6.QtGui import QPainter, QPixmap, QPolygon
+        from PyQt6.QtCore import QPoint
         
-        # Clear the tree
-        self.lists_tree.clear()
+        # Create icons directory if needed
+        icons_dir = os.path.join(os.path.dirname(__file__), "resources", "icons")
+        os.makedirs(icons_dir, exist_ok=True)
         
-        # 1. Add "Collections" at the top
-        collections_item = QTreeWidgetItem(self.lists_tree)
-        collections_item.setText(0, "Collections")
-        collections_item.setData(0, Qt.ItemDataRole.UserRole, "collections")
-        collections_item.setFont(0, QFont("Gotham", 12, QFont.Weight.Bold))  # Make it bold to stand out
+        # Create right chevron icon
+        right_chevron_path = os.path.join(icons_dir, "chevron-right.png")
+        if not os.path.exists(right_chevron_path):
+            pixmap = QPixmap(16, 16)
+            pixmap.fill(Qt.GlobalColor.transparent)
+            painter = QPainter(pixmap)
+            painter.setPen(QColor(179, 179, 179))  # Light gray for icon
+            # Draw a right-facing chevron
+            points = [QPoint(6, 4), QPoint(10, 8), QPoint(6, 12)]
+            painter.drawPolyline(QPolygon(points))
+            painter.end()
+            pixmap.save(right_chevron_path)
         
-        # Get collections
-        collections = self.list_repository.get_collections()
-        print(f"Refreshing collections: {collections.keys()}")  # Debug output
+        # Create down chevron icon
+        down_chevron_path = os.path.join(icons_dir, "chevron-down.png")
+        if not os.path.exists(down_chevron_path):
+            pixmap = QPixmap(16, 16)
+            pixmap.fill(Qt.GlobalColor.transparent)
+            painter = QPainter(pixmap)
+            painter.setPen(QColor(179, 179, 179))  # Light gray for icon
+            # Draw a down-facing chevron
+            points = [QPoint(4, 6), QPoint(8, 10), QPoint(12, 6)]
+            painter.drawPolyline(QPolygon(points))
+            painter.end()
+            pixmap.save(down_chevron_path)
+    
+    def save_tree_state(self):
+        """Save the expansion state of the sidebar tree."""
+        if not hasattr(self, 'tree_states'):
+            self.tree_states = {}
         
-        # Add collections and their lists
-        collection_items = {}
-        for collection_name, collection_lists in collections.items():
-            # Create the collection item
-            collection_item = QTreeWidgetItem(collections_item)
-            collection_item.setText(0, collection_name)
-            collection_item.setData(0, Qt.ItemDataRole.UserRole, f"collection:{collection_name}")
-            collection_item.setFont(0, QFont("Gotham", 11))
-            collection_items[collection_name] = collection_item
+        # Only save if tree exists and has items
+        if not hasattr(self, 'lists_tree') or self.lists_tree.topLevelItemCount() == 0:
+            return
             
-            # Add lists to the collection
-            for list_info in collection_lists:
-                SidebarListItem(list_info, collection_item)
+        # Clear previous states
+        self.tree_states.clear()
         
-        # 2. Add "Recent Lists" below Collections
-        recent_lists_item = QTreeWidgetItem(self.lists_tree)
-        recent_lists_item.setText(0, "Recent Lists")
-        recent_lists_item.setData(0, Qt.ItemDataRole.UserRole, "recent_lists")
-        recent_lists_item.setFont(0, QFont("Gotham", 12, QFont.Weight.Medium))
-        
-        # Add recent lists
-        recent_lists = self.list_repository.get_recent_lists()
-        for list_info in recent_lists:
-            SidebarListItem(list_info, recent_lists_item)
-        
-        # Restore expansion state for collections
-        for i in range(self.lists_tree.topLevelItemCount()):
-            top_item = self.lists_tree.topLevelItem(i)
-            top_id = top_item.data(0, Qt.ItemDataRole.UserRole)
-            
-            if top_id == "collections":
-                # Always expand Collections
-                top_item.setExpanded(True)
-                
-                # Restore individual collection states
-                for j in range(top_item.childCount()):
-                    col_item = top_item.child(j)
-                    col_id = col_item.data(0, Qt.ItemDataRole.UserRole)
-                    if col_id in expansion_state:
-                        col_item.setExpanded(expansion_state[col_id])
-            elif top_id == "recent_lists":
-                # Always expand Recent Lists
-                top_item.setExpanded(True)
-        
-        # Refresh the view
-        self.lists_tree.update()
-
-    def remember_collection_expansion_state(self) -> None:
-        """
-        Store the current expansion state of collections for later restoration.
-        Should be called before operations like rename/create that refresh the tree.
-        """
-        if not hasattr(self, 'collection_expansion_state'):
-            self.collection_expansion_state = {}
-        
-        # Find the collections item
+        # Process top-level items
         for i in range(self.lists_tree.topLevelItemCount()):
             item = self.lists_tree.topLevelItem(i)
-            if item.data(0, Qt.ItemDataRole.UserRole) == "collections":
-                # Save overall collections expansion
-                self.collection_expansion_state["collections"] = item.isExpanded()
+            item_id = item.data(0, Qt.ItemDataRole.UserRole)
+            if item_id:
+                self.tree_states[item_id] = item.isExpanded()
                 
-                # Save individual collection expansion states
+                # Process children (collections)
                 for j in range(item.childCount()):
                     child = item.child(j)
-                    item_id = child.data(0, Qt.ItemDataRole.UserRole)
-                    if item_id and item_id.startswith("collection:"):
-                        collection_name = item_id.split(":", 1)[1]
-                        self.collection_expansion_state[f"collection:{collection_name}"] = child.isExpanded()
-                break
+                    child_id = child.data(0, Qt.ItemDataRole.UserRole)
+                    if child_id:
+                        self.tree_states[child_id] = child.isExpanded()
 
-    def handle_list_double_clicked(self, item: QTreeWidgetItem, column: int) -> None:
-        """
-        Handle double-clicking on a list item.
+    def restore_tree_state(self):
+        """Restore the saved expansion state."""
+        if not hasattr(self, 'tree_states') or not self.tree_states:
+            # Default: expand Collections and Recent Lists
+            for i in range(self.lists_tree.topLevelItemCount()):
+                item = self.lists_tree.topLevelItem(i)
+                item_id = item.data(0, Qt.ItemDataRole.UserRole)
+                if item_id in ["collections", "recent_lists"]:
+                    item.setExpanded(True)
+            return
         
-        Args:
-            item: The clicked item
-            column: The clicked column
-        """
+        # Process top-level items
+        for i in range(self.lists_tree.topLevelItemCount()):
+            item = self.lists_tree.topLevelItem(i)
+            item_id = item.data(0, Qt.ItemDataRole.UserRole)
+            if item_id and item_id in self.tree_states:
+                item.setExpanded(self.tree_states[item_id])
+                
+                # Process children (collections)
+                for j in range(item.childCount()):
+                    child = item.child(j)
+                    child_id = child.data(0, Qt.ItemDataRole.UserRole)
+                    if child_id and child_id in self.tree_states:
+                        child.setExpanded(self.tree_states[child_id])
+    
+    def handle_item_clicked(self, item, column):
+        """Handle item clicked with improved expansion behavior."""
         # Get the item type
         item_type = item.data(0, Qt.ItemDataRole.UserRole)
         
+        # For collection items or top-level categories, toggle expansion
+        if (item_type and (item_type.startswith("collection:") or 
+                    item_type in ["collections", "recent_lists"])):
+            # Save current expansion state
+            was_expanded = item.isExpanded()
+            
+            # Toggle expansion state
+            item.setExpanded(not was_expanded)
+            
+            # Update the expansion indicator
+            item.setData(0, Qt.ItemDataRole.UserRole + 1, item.isExpanded())
+            
+            # Apply styling to show active state when expanded
+            if item.isExpanded():
+                item.setBackground(0, QBrush(QColor(40, 40, 40)))
+            else:
+                item.setBackground(0, QBrush(Qt.GlobalColor.transparent))
+        
+        # For SidebarListItem (music lists), don't change expansion but prepare for double-click
+        elif isinstance(item, SidebarListItem):
+            # Do nothing here - double click will handle opening
+            pass
+
+    def handle_list_double_clicked(self, item, column):
+        """Handle double-clicking on a list item."""
+        # If it's a list item, open it
         if isinstance(item, SidebarListItem):
-            # Store file path before emitting any signals
             file_path = item.list_info.get("file_path")
             if file_path:
-                # Find parent collection before doing anything else
-                parent_item = item.parent()
-                parent_expanded = False
-                parent_id = None
-                
-                if parent_item:
-                    parent_expanded = parent_item.isExpanded()
-                    parent_id = parent_item.data(0, Qt.ItemDataRole.UserRole)
-                
-                # Now we can safely emit the signal
                 self.open_list.emit(file_path)
-                
-                # Use a short timer to restore the expansion state after event processing
-                if parent_expanded and parent_id:
-                    from PyQt6.QtCore import QTimer
-                    
-                    def restore_collection():
-                        # Find the parent collection again
-                        for i in range(self.lists_tree.topLevelItemCount()):
-                            top_item = self.lists_tree.topLevelItem(i)
-                            if top_item.data(0, Qt.ItemDataRole.UserRole) == "collections":
-                                for j in range(top_item.childCount()):
-                                    col_item = top_item.child(j)
-                                    if col_item.data(0, Qt.ItemDataRole.UserRole) == parent_id:
-                                        # Restore expanded state
-                                        col_item.setExpanded(True)
-                                        return
-                    
-                    # Use a timer to restore state after Qt has processed the events
-                    QTimer.singleShot(50, restore_collection)
-        
-        elif item_type and item_type.startswith("collection:"):
-            # Toggle expansion for collections
-            item.setExpanded(not item.isExpanded())
-
-    def save_expansion_states(self):
+    
+    def set_sidebar_width(self, width: int):
         """
-        Save the current expansion state of all tree items.
-        
-        Returns:
-            Dictionary mapping data roles to expansion states
-        """
-        states = {}
-        
-        # Start with top-level items
-        for i in range(self.lists_tree.topLevelItemCount()):
-            top_item = self.lists_tree.topLevelItem(i)
-            top_data = top_item.data(0, Qt.ItemDataRole.UserRole)
-            if top_data:
-                states[top_data] = top_item.isExpanded()
-                
-                # Check children for collections
-                for j in range(top_item.childCount()):
-                    child = top_item.child(j)
-                    child_data = child.data(0, Qt.ItemDataRole.UserRole)
-                    if child_data and child_data.startswith("collection:"):
-                        states[child_data] = child.isExpanded()
-        
-        return states
-
-    def restore_expansion_states(self, states):
-        """
-        Restore previously saved expansion states.
+        Set the sidebar width and save to config.
         
         Args:
-            states: Dictionary mapping data roles to expansion states
+            width: New width in pixels
         """
-        # Apply to top-level items first
-        for i in range(self.lists_tree.topLevelItemCount()):
-            top_item = self.lists_tree.topLevelItem(i)
-            top_data = top_item.data(0, Qt.ItemDataRole.UserRole)
-            if top_data and top_data in states:
-                top_item.setExpanded(states[top_data])
-                
-                # Apply to collection children
-                for j in range(top_item.childCount()):
-                    child = top_item.child(j)
-                    child_data = child.data(0, Qt.ItemDataRole.UserRole)
-                    if child_data and child_data in states:
-                        child.setExpanded(states[child_data])
-
+        self.setFixedWidth(width)
+        if hasattr(self.list_repository, 'config'):
+            self.list_repository.config.set("sidebar/width", width)
+    
     def show_list_context_menu(self, position: QPoint) -> None:
         """
         Show the context menu for a list item.
@@ -650,28 +680,8 @@ class SidebarManager(QScrollArea):
         # Get the item type
         item_type = item.data(0, Qt.ItemDataRole.UserRole)
         
-        # Create the context menu with Spotify styling
+        # Create the context menu - uses CSS from stylesheet
         menu = QMenu(self)
-        menu.setStyleSheet("""
-            QMenu {
-                background-color: #282828;
-                color: #FFFFFF;
-                border: 1px solid #333333;
-                border-radius: 4px;
-                padding: 8px 0px;
-            }
-            QMenu::item {
-                padding: 8px 24px;
-            }
-            QMenu::item:selected {
-                background-color: #333333;
-            }
-            QMenu::separator {
-                height: 1px;
-                background-color: #333333;
-                margin: 4px 8px;
-            }
-        """)
         
         if isinstance(item, SidebarListItem):
             # List item context menu
@@ -682,11 +692,8 @@ class SidebarManager(QScrollArea):
             open_action.triggered.connect(lambda: self.open_list.emit(file_path))
             menu.addAction(open_action)
             
-            # Removed "Add to / Remove from Liked Lists" action
-            
             # Add "Add to Collection" submenu
             add_to_collection_menu = QMenu("Add to Collection", menu)
-            add_to_collection_menu.setStyleSheet(menu.styleSheet())
             
             # Get all collections
             collections = self.list_repository.get_collections()
@@ -752,12 +759,11 @@ class SidebarManager(QScrollArea):
     def create_new_collection(self) -> None:
         """Create a new collection."""
         name, ok = QInputDialog.getText(
-            self, "Create Collection", "Collection name:")  # Changed from "Folder"
+            self, "Create Collection", "Collection name:")
         
         if ok and name:
-            # Remember expansion state before refreshing
-            if hasattr(self, 'remember_collection_expansion_state'):
-                self.remember_collection_expansion_state()
+            # Save tree state before modifying
+            self.save_tree_state()
                 
             self.list_repository.create_collection(name)
             self.refresh_lists()
@@ -769,7 +775,7 @@ class SidebarManager(QScrollArea):
                     item.setExpanded(True)
                     
                     # Find and select the new collection
-                    for j in range(item.childCount() - 1):  # -1 to skip the "Add Collection" item
+                    for j in range(item.childCount()):
                         child = item.child(j)
                         if child.text(0) == name:
                             self.lists_tree.setCurrentItem(child)
@@ -784,7 +790,7 @@ class SidebarManager(QScrollArea):
             file_path: Path to the list file
         """
         name, ok = QInputDialog.getText(
-            self, "Create Collection", "Collection name:")  # Changed from "Folder"
+            self, "Create Collection", "Collection name:")
         
         if ok and name:
             self.list_repository.create_collection(name)
@@ -794,9 +800,8 @@ class SidebarManager(QScrollArea):
             # Show confirmation message
             QMessageBox.information(
                 self, "Success", 
-                f"Added list to new collection '{name}'")  # Changed terminology
+                f"Added list to new collection '{name}'")
     
-
     def rename_collection(self, collection_name: str) -> None:
         """
         Rename a collection.
@@ -805,12 +810,11 @@ class SidebarManager(QScrollArea):
             collection_name: Current name of the collection
         """
         new_name, ok = QInputDialog.getText(
-            self, "Rename Collection", "New name:", text=collection_name)  # Changed terminology
+            self, "Rename Collection", "New name:", text=collection_name)
         
         if ok and new_name and new_name != collection_name:
-            # Remember expansion state before refreshing
-            if hasattr(self, 'remember_collection_expansion_state'):
-                self.remember_collection_expansion_state()
+            # Save tree state before modifying
+            self.save_tree_state()
                 
             success = self.list_repository.rename_collection(collection_name, new_name)
             if success:
@@ -828,7 +832,7 @@ class SidebarManager(QScrollArea):
             collection_name: Name of the collection
         """
         reply = QMessageBox.question(
-            self, "Delete Collection",  # Changed terminology
+            self, "Delete Collection",
             f"Are you sure you want to delete the collection '{collection_name}'?\n\n"
             "The lists in the collection will not be deleted.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
@@ -836,9 +840,8 @@ class SidebarManager(QScrollArea):
         )
         
         if reply == QMessageBox.StandardButton.Yes:
-            # Remember expansion state before refreshing
-            if hasattr(self, 'remember_collection_expansion_state'):
-                self.remember_collection_expansion_state()
+            # Save tree state before modifying
+            self.save_tree_state()
                 
             success = self.list_repository.delete_collection(collection_name)
             if success:
@@ -875,3 +878,46 @@ class SidebarManager(QScrollArea):
             if success:
                 self.list_deleted.emit(file_path)
                 self.refresh_lists()
+
+class SpotifyTreeDelegate(QStyledItemDelegate):
+    """Custom delegate for drawing Spotify-style tree items with expansion indicators."""
+    
+    def paint(self, painter, option, index):
+        """Custom paint method to show expansion indicators."""
+        # Call the base class method first to draw the basic item
+        super().paint(painter, option, index)
+        
+        # Get the item
+        model = index.model()
+        has_children = model.hasChildren(index)
+        
+        # Only draw expansion indicators for items that have children
+        if has_children:
+            # Determine the item's state (expanded/collapsed)
+            is_expanded = index.model().data(index, Qt.ItemDataRole.UserRole + 1) or False
+            
+            # Calculate the indicator position
+            rect = option.rect
+            indicator_rect = QRect(rect.left() - 16, rect.top() + (rect.height() - 16) // 2, 16, 16)
+            
+            # Set up the painter
+            painter.save()
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            
+            # Draw the expansion indicator (triangle)
+            color = QColor(180, 180, 180)  # Light gray for the indicator
+            if option.state & QStyleOptionViewItem.State.Selected:
+                color = QColor(255, 255, 255)  # White if selected
+                
+            painter.setPen(color)
+            painter.setBrush(QBrush(color))
+            
+            # Draw triangle based on expansion state
+            if is_expanded:
+                # Down arrow
+                painter.drawText(indicator_rect, Qt.AlignmentFlag.AlignCenter, "▼")
+            else:
+                # Right arrow
+                painter.drawText(indicator_rect, Qt.AlignmentFlag.AlignCenter, "▶")
+                
+            painter.restore()

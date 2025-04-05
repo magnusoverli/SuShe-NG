@@ -25,60 +25,6 @@ from metadata import ICON_PATH
 from utils.list_repository import ListRepository
 from PyQt6.QtWidgets import QInputDialog
 
-class SidebarItem(QFrame):
-    """Custom sidebar item with Spotify-like styling."""
-    
-    def __init__(self, text: str, icon_name: str = None, parent=None):
-        """
-        Initialize a sidebar item.
-        
-        Args:
-            text: The item text
-            icon_name: Optional icon name
-            parent: Parent widget
-        """
-        super().__init__(parent)
-        
-        self.setObjectName("sidebarItem")
-        self.setFixedHeight(40)
-        
-        # Create layout
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(12, 0, 12, 0)
-        layout.setSpacing(12)
-        
-        # Add icon if provided
-        if icon_name:
-            icon = QLabel()
-            # In a real application, you would load an actual icon
-            # For now, we'll use a placeholder
-            icon.setText("🔍" if icon_name == "search" else 
-                         "🏠" if icon_name == "home" else
-                         "📚" if icon_name == "library" else "📁")
-            icon.setStyleSheet("color: #B3B3B3;")
-            layout.addWidget(icon)
-        
-        # Add text
-        self.label = QLabel(text)
-        self.label.setStyleSheet("color: #B3B3B3; font-weight: bold;")
-        layout.addWidget(self.label)
-        
-        layout.addStretch()
-        
-        # Install event filter for hover effects
-        self.installEventFilter(self)
-    
-    def eventFilter(self, obj, event):
-        """Handle events for hover effects."""
-        if event.type() == QEvent.Type.Enter:
-            self.label.setStyleSheet("color: #FFFFFF; font-weight: bold;")
-            return True
-        elif event.type() == QEvent.Type.Leave:
-            self.label.setStyleSheet("color: #B3B3B3; font-weight: bold;")
-            return True
-        return super().eventFilter(obj, event)
-
-
 class AlbumTableDelegate(QStyledItemDelegate):
     """Custom delegate for album table to add Spotify-like styling with album artwork."""
     
@@ -292,13 +238,6 @@ class MainWindow(QMainWindow):
             content_layout.setSpacing(0)
             print("Content widget created")
             
-            # Create the sidebar
-            print("Creating sidebar...")
-            self.sidebar = self.create_sidebar()
-            print("Sidebar created")
-            content_layout.addWidget(self.sidebar)
-            print("Sidebar added to layout")
-            
             # Create the main view splitter
             print("Creating splitter...")
             self.splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -423,11 +362,7 @@ class MainWindow(QMainWindow):
                 # Add to the selected collection
                 if self.current_file_path:
                     self.list_repository.add_to_collection(self.current_file_path, list_info["collection_name"])
-                    
-                # Refresh the sidebar if it exists
-                if hasattr(self, 'sidebar_manager'):
-                    self.sidebar_manager.refresh_lists()
-            
+
         except Exception as e:
             import traceback
             print(f"Error creating new file: {e}")
@@ -491,10 +426,6 @@ class MainWindow(QMainWindow):
                         self.list_metadata["collection"] = collection_name
                     
                     self.status_bar.showMessage(f"Imported list from {file_path} to collection: {collection_name}")
-                    
-                    # Refresh the sidebar
-                    if hasattr(self, 'sidebar_manager'):
-                        self.sidebar_manager.refresh_lists()
             else:
                 # Fallback to old import method
                 self.open_album_list(file_path)
@@ -834,36 +765,6 @@ class MainWindow(QMainWindow):
             self.config.set("recent_files", [])
             self._update_recent_files_menu()
 
-    def create_sidebar(self) -> QWidget:
-        """Create the application sidebar using the SidebarManager."""
-        # Create the sidebar manager
-        from views.sidebar_manager import SidebarManager
-        self.sidebar_manager = SidebarManager(self.list_repository)
-        
-        # Connect signals
-        self.sidebar_manager.create_new_list.connect(self._new_file)
-        self.sidebar_manager.import_list.connect(self._import_list)
-        self.sidebar_manager.open_list.connect(self.open_album_list)
-        self.sidebar_manager.list_deleted.connect(self._on_list_deleted)
-        
-        return self.sidebar_manager
-
-
-    def _on_list_deleted(self, file_path: str) -> None:
-        """
-        Handle list deletion.
-        
-        Args:
-            file_path: Path to the deleted list file
-        """
-        # Check if the deleted list is the currently open list
-        current_file = getattr(self, 'current_file_path', None)
-        if current_file == file_path:
-            # Create a new empty list
-            self._new_file()
-        
-        self.status_bar.showMessage(f"List deleted")
-
     def save_to_repository(self, existing_path: str = None, allow_empty: bool = False) -> None:
         """
         Save the current album list to the repository.
@@ -965,10 +866,6 @@ class MainWindow(QMainWindow):
                 self.status_bar.showMessage(f"Saved {len(self.albums)} albums to collection: {collection_name}")
             else:
                 self.status_bar.showMessage(f"Saved {len(self.albums)} albums to repository")
-            
-            # Refresh the sidebar
-            self.sidebar_manager.refresh_lists()
-                
         except Exception as e:
             import traceback
             print(f"Error saving to repository: {e}")
@@ -1433,22 +1330,12 @@ class MainWindow(QMainWindow):
         
         # View menu
         view_menu = menu_bar.addMenu("&View")
-        
-        # Toggle sidebar action
-        toggle_sidebar_action = QAction("Toggle &Sidebar", self)
-        toggle_sidebar_action.setShortcut("Ctrl+B")
-        toggle_sidebar_action.triggered.connect(self.toggle_sidebar)
-        view_menu.addAction(toggle_sidebar_action)
-        
+
         # Toggle status bar action
         toggle_status_bar_action = QAction("Toggle &Status Bar", self)
         toggle_status_bar_action.setShortcut("Ctrl+/")
         toggle_status_bar_action.triggered.connect(self.toggle_status_bar)
         view_menu.addAction(toggle_status_bar_action)
-    
-    def toggle_sidebar(self):
-        """Toggle the visibility of the sidebar."""
-        self.sidebar.setVisible(not self.sidebar.isVisible())
     
     def toggle_status_bar(self):
         """Toggle the visibility of the status bar."""
@@ -1463,17 +1350,6 @@ class MainWindow(QMainWindow):
         self.setStyleSheet("""
             QMainWindow {
                 background-color: #121212;
-            }
-            #sidebar {
-                background-color: #000000;
-                border: none;
-            }
-            #sidebarItem {
-                background-color: transparent;
-                border-radius: 4px;
-            }
-            #sidebarItem:hover {
-                background-color: #282828;
             }
             #mainHeader {
                 background-color: rgba(0, 0, 0, 0.5);

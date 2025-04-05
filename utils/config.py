@@ -85,28 +85,6 @@ class Config:
         
         return current
     
-    def reset_to_defaults(self) -> None:
-        """Reset all configuration values to their defaults."""
-        self.settings.clear()
-        self._set_defaults_recursive(self.defaults)
-    
-    def _set_defaults_recursive(self, defaults_dict: Dict[str, Any], 
-                               prefix: str = "") -> None:
-        """
-        Recursively set default values.
-        
-        Args:
-            defaults_dict: The dictionary of default values
-            prefix: The prefix for the key path
-        """
-        for key, value in defaults_dict.items():
-            full_key = f"{prefix}/{key}" if prefix else key
-            
-            if isinstance(value, dict):
-                self._set_defaults_recursive(value, full_key)
-            else:
-                self.set(full_key, value)
-    
     def add_recent_file(self, filepath: str, max_entries: int = 10) -> None:
         """
         Add a file to the recent files list.

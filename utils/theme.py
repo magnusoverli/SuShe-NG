@@ -21,30 +21,7 @@ class SpotifyTheme:
     SURFACE_HIGHLIGHT = QColor(40, 40, 40) # #282828 - Hover states
     DIVIDER = QColor(40, 40, 40)           # #282828 - Lines and dividers
     ACTIVE = QColor(80, 80, 80)            # #505050 - Selected items
-    
-    @classmethod
-    def apply_to_application(cls, app: QApplication) -> None:
-        """
-        Apply the Spotify theme to the entire application.
-        
-        Args:
-            app: The QApplication instance
-        """
-        # Set the fusion style which works well with custom palettes
-        app.setStyle("Fusion")
-        
-        # Create and apply a dark palette
-        palette = cls.create_palette()
-        app.setPalette(palette)
-        
-        # Set the default font - Spotify uses a custom font similar to Circular
-        # We'll use Segoe UI or system default sans-serif as the closest match
-        font = QFont("Segoe UI", 10)
-        app.setFont(font)
-        
-        # Apply global stylesheet
-        app.setStyleSheet(cls.get_global_stylesheet())
-    
+
     @classmethod
     def apply_to_window(cls, window: QMainWindow) -> None:
         """
@@ -284,62 +261,5 @@ class SpotifyTheme:
             QStatusBar::item {
                 border: none;
                 padding: 0px;
-            }
-        """)
-    
-    @staticmethod
-    def style_table_view(table_view: QTableView) -> None:
-        """
-        Apply Spotify-like styling to a table view.
-        
-        Args:
-            table_view: The QTableView instance
-        """
-        table_view.setStyleSheet("""
-            QTableView {
-                background-color: #121212;
-                alternate-background-color: #181818;
-                color: #FFFFFF;
-                border: none;
-                gridline-color: transparent;
-                outline: none;
-                selection-background-color: #333333;
-                selection-color: #FFFFFF;
-            }
-            
-            QTableView::item {
-                padding: 12px 16px;
-                border-bottom: 1px solid #282828;
-            }
-            
-            QTableView::item:selected {
-                background-color: #333333;
-                color: #FFFFFF;
-            }
-            
-            QTableView::item:hover {
-                background-color: #282828;
-            }
-            
-            QHeaderView::section {
-                background-color: #121212;
-                color: #B3B3B3;
-                padding: 8px 16px;
-                border: none;
-                border-bottom: 1px solid #333333;
-                font-weight: bold;
-            }
-            
-            QHeaderView::section:checked {
-                background-color: #333333;
-            }
-            
-            QHeaderView::section:hover {
-                background-color: #282828;
-            }
-            
-            QTableCornerButton::section {
-                background-color: #121212;
-                border: none;
             }
         """)

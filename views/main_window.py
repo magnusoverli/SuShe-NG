@@ -873,53 +873,6 @@ class MainWindow(QMainWindow):
                 f"An error occurred while saving: {str(e)}"
             )
 
-    def _save_file(self):
-        """Save the current album list."""
-        # Check if we have a current file path
-        current_file = getattr(self, 'current_file_path', None)
-        
-        if current_file:
-            # Save to the current file
-            self.save_to_repository(current_file)
-        else:
-            # No current file, use Save As
-            self._save_file_as()
-
-    def _save_file_as(self):
-        """Save the current album list with a new name."""
-        # Check if there are albums to save
-        if not hasattr(self, 'albums') or not self.albums:
-            QMessageBox.warning(
-                self,
-                "Save Warning",
-                "There are no albums to save."
-            )
-            return
-        
-        # Create metadata if it doesn't exist
-        if not hasattr(self, 'list_metadata'):
-            self.list_metadata = {
-                "title": "My Album List",
-                "description": "Album list created with SuShe NG",
-                "date_created": datetime.now().isoformat(),
-                "date_modified": datetime.now().isoformat()
-            }
-        
-        # Ask for a list title
-        title, ok = QInputDialog.getText(
-            self, "Save As", "Enter a title for the list:", 
-            text=self.list_metadata.get("title", "My Album List"))
-        
-        if ok and title:
-            # Update the metadata with the new title
-            self.list_metadata["title"] = title
-            
-            # Save with a new filename
-            self.save_to_repository()
-        else:
-            # User canceled, don't save
-            return
-
     
     def create_main_panel(self) -> QWidget:
         """Create the main content panel with header and album table."""
@@ -1184,83 +1137,6 @@ class MainWindow(QMainWindow):
             }
         """)
 
-    def setup_table_view(self) -> None:
-        """Set up the table view with appropriate settings."""
-        print("setup_table_view starting...")
-        try:
-            print("Setting drag and drop...")
-            self.table_view.setDragEnabled(True)
-            self.table_view.setAcceptDrops(True)
-            self.table_view.setDragDropMode(QTableView.DragDropMode.InternalMove)
-            print("Setting selection behavior...")
-            self.table_view.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
-            print("Setting grid and colors...")
-            self.table_view.setShowGrid(False)
-            self.table_view.setAlternatingRowColors(True)
-            
-            print("Setting resize modes...")
-            # More Spotify-like table settings
-            try:
-                print("Setting column 0 resize mode...")
-                self.table_view.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
-                print("Setting column 1 resize mode...")
-                self.table_view.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
-                print("Setting column 2 resize mode...")
-                self.table_view.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)
-                print("Setting column 3 resize mode...")
-                self.table_view.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Interactive)
-                print("Setting column 4 resize mode...")
-                self.table_view.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Interactive)
-                print("Setting column 5 resize mode...")
-                self.table_view.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeMode.Stretch)
-            except Exception as resize_error:
-                print(f"Error setting resize modes: {resize_error}")
-                # Use a safer approach that doesn't require specific column knowledge
-                print("Falling back to default resize mode...")
-                self.table_view.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-            
-            print("Setting column widths...")
-            try:
-                # Set column widths
-                self.table_view.setColumnWidth(0, 300)  # Album name + cover
-                self.table_view.setColumnWidth(1, 180)  # Artist
-                self.table_view.setColumnWidth(2, 120)  # Release date
-                self.table_view.setColumnWidth(3, 140)  # Genre 1
-                self.table_view.setColumnWidth(4, 140)  # Genre 2
-            except Exception as width_error:
-                print(f"Error setting column widths: {width_error}")
-            
-            print("Setting header alignment...")
-            self.table_view.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-            print("Setting vertical header visibility...")
-            self.table_view.verticalHeader().setVisible(False)
-            print("Setting frame shape...")
-            self.table_view.setFrameShape(QFrame.Shape.NoFrame)
-            print("Setting selection mode...")
-            self.table_view.setSelectionMode(QTableView.SelectionMode.SingleSelection)
-            
-            print("Setting row height...")
-            # Set row height
-            self.table_view.verticalHeader().setDefaultSectionSize(56)
-            
-            print("Setting header stylesheet...")
-            # Customize the header
-            self.table_view.horizontalHeader().setStyleSheet("""
-                QHeaderView::section {
-                    background-color: #121212;
-                    color: #B3B3B3;
-                    padding: 8px;
-                    border: none;
-                    border-bottom: 1px solid #333333;
-                    font-weight: bold;
-                }
-            """)
-            print("setup_table_view completed")
-        except Exception as e:
-            import traceback
-            print(f"Error in setup_table_view: {e}")
-            traceback.print_exc()
-            raise
     
     def create_menu_bar(self) -> None:
         """Create the application menu bar with standard file options."""
@@ -1455,16 +1331,3 @@ class MainWindow(QMainWindow):
             self.config.set("window/height", self.height())
             self.config.set("window/position_x", self.x())
             self.config.set("window/position_y", self.y())
-    
-    def closeEvent(self, event: QCloseEvent) -> None:
-        """
-        Handle the window close event.
-        
-        Args:
-            event: The close event
-        """
-        # Save window state before closing
-        self.save_window_state()
-        
-        # Accept the close event
-        event.accept()

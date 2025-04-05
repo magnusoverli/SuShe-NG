@@ -26,7 +26,8 @@ from metadata import ICON_PATH
 from utils.logging_utils import get_module_logger
 
 from utils.list_repository import ListRepository
-from PyQt6.QtWidgets import QInputDialog
+
+from views.sidebar_panel import SidebarPanel
 
 # Get module logger
 log = get_module_logger()
@@ -254,12 +255,19 @@ class MainWindow(QMainWindow):
             content_layout.addWidget(self.splitter, 1)  # Give the splitter more space
             log.debug("Splitter added to layout")
             
+            # Create the sidebar panel
+            log.debug("Creating sidebar panel...")
+            self.sidebar_panel = self.create_sidebar_panel()
+            log.debug("Sidebar panel created")
+            
             # Create the main panel
             log.debug("Creating main panel...")
             self.main_panel = self.create_main_panel()
             log.debug("Main panel created")
+            
+            # Add both panels to the splitter
+            self.splitter.addWidget(self.sidebar_panel)
             self.splitter.addWidget(self.main_panel)
-            log.debug("Main panel added to splitter")
             
             # Set initial sizes for the splitter
             self.splitter.setSizes([220, 780])
@@ -380,6 +388,15 @@ class MainWindow(QMainWindow):
                     log.debug(f"Adding list to collection: {list_info['collection_name']}")
                     self.list_repository.add_to_collection(self.current_file_path, list_info["collection_name"])
 
+                # Update the sidebar if it exists to show the new list
+                if hasattr(self, 'sidebar') and self.sidebar and hasattr(self, 'list_repository'):
+                    collections = self.list_repository.get_collections()
+                    self.sidebar.populate_collections(collections)
+                                    
+                    # Select the newly created list
+                    if self.current_file_path:
+                        self.sidebar.select_list(self.current_file_path)
+
         except Exception as e:
             log.error(f"Error creating new file: {e}")
             log.debug(traceback.format_exc())
@@ -391,18 +408,72 @@ class MainWindow(QMainWindow):
 
     def _import_list(self):
         """Import an album list from a file."""
-        log.debug("Importing album list")
+        log.debug("Starting album list import process")
         try:
             # Get file path from dialog
             file_path, _ = QFileDialog.getOpenFileName(
                 self,
                 "Import Album List",
                 "",
-                "Album Lists (*.json *.sush);;All Files (*.*)"
+                "All Supported Files (*.json *.sush);;JSON Files (*.json);;SuShe NG Files (*.sush);;All Files (*.*)"
             )
             
             if not file_path:
                 log.debug("User cancelled file selection")
+                return
+                
+            log.debug(f"Selected file for import: {file_path}")
+            
+            # Check if file exists
+            if not os.path.isfile(file_path):
+                log.error(f"Selected file does not exist: {file_path}")
+                QMessageBox.critical(
+                    self,
+                    "Import Error",
+                    f"The selected file does not exist: {file_path}"
+                )
+                return
+                
+            # Check file size
+            file_size = os.path.getsize(file_path)
+            log.debug(f"File size: {file_size} bytes")
+            
+            if file_size == 0:
+                log.error(f"Selected file is empty: {file_path}")
+                QMessageBox.critical(
+                    self,
+                    "Import Error",
+                    f"The selected file is empty: {file_path}"
+                )
+                return
+                
+            # Try to read the file to verify its content
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    # Just read a small portion to check if it's a valid file
+                    content = f.read(1024)
+                    log.debug(f"File content preview: {content[:100]}...")
+                    
+                    # Simple check if it looks like JSON
+                    if not (content.strip().startswith('{') or content.strip().startswith('[')):
+                        log.warning(f"File does not appear to be valid JSON: {file_path}")
+                        result = QMessageBox.warning(
+                            self,
+                            "Import Warning",
+                            f"The selected file does not appear to be a valid album list file. Attempt to import anyway?",
+                            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                            QMessageBox.StandardButton.No
+                        )
+                        if result != QMessageBox.StandardButton.Yes:
+                            log.debug("User cancelled import of potentially invalid file")
+                            return
+            except Exception as e:
+                log.error(f"Error reading file: {e}")
+                QMessageBox.critical(
+                    self,
+                    "Import Error",
+                    f"Could not read the selected file: {e}"
+                )
                 return
                     
             # Import the file into the repository
@@ -429,35 +500,104 @@ class MainWindow(QMainWindow):
                     log.debug("User cancelled collection selection")
                     return
                 
+                log.debug(f"Selected collection: {collection_name}, is_new: {is_new}")
+                
                 # Create the new collection if needed
                 if is_new:
                     log.info(f"Creating new collection for import: {collection_name}")
                     self.list_repository.create_collection(collection_name)
-                    
-                # Import the file
+                        
+                # Import the file - with more detailed logging
                 log.info(f"Importing file: {file_path}")
-                imported_path = self.list_repository.import_external_list(file_path)
-                if imported_path:
-                    # Add to the selected collection
-                    log.debug(f"Adding imported list to collection: {collection_name}")
+                
+                try:
+                    # Try direct import with list manager first
+                    log.debug("Using list_manager to import file")
+                    
+                    # Create album list manager
+                    list_manager = AlbumListManager()
+                    
+                    # Determine format based on extension
+                    if file_path.lower().endswith('.json'):
+                        log.debug("Detected JSON format, using import_from_old_format")
+                        albums, metadata = list_manager.import_from_old_format(file_path)
+                    elif file_path.lower().endswith('.sush'):
+                        log.debug("Detected SUSH format, using import_from_new_format")
+                        albums, metadata = list_manager.import_from_new_format(file_path)
+                    else:
+                        # Try to guess format based on content
+                        log.debug("Unknown file extension, attempting to determine format from content")
+                        try:
+                            # First try as new format
+                            albums, metadata = list_manager.import_from_new_format(file_path)
+                            log.debug("Successfully imported as new format")
+                        except Exception as e:
+                            log.debug(f"Failed to import as new format: {e}, trying old format")
+                            # If that fails, try as old format
+                            albums, metadata = list_manager.import_from_old_format(file_path)
+                            log.debug("Successfully imported as old format")
+                    
+                    log.info(f"Successfully parsed file, found {len(albums)} albums with title '{metadata.get('title')}'")
+                    
+                    # Create a title for the list if needed
+                    if not metadata.get('title'):
+                        # Use the filename without extension
+                        base_name = os.path.basename(file_path)
+                        title = os.path.splitext(base_name)[0]
+                        metadata['title'] = title
+                        log.debug(f"Created title from filename: {title}")
+                    
+                    # Update metadata with collection info
+                    metadata['collection'] = collection_name
+                    
+                    # Save to repository
+                    imported_path = self.list_repository.save_list(albums, metadata)
+                    log.info(f"Saved imported list to repository: {imported_path}")
+                    
+                    # Add to collection
                     self.list_repository.add_to_collection(imported_path, collection_name)
+                    log.info(f"Added imported list to collection: {collection_name}")
+                    
+                    # Update sidebar display
+                    if hasattr(self, 'sidebar') and self.sidebar:
+                        log.debug("Updating sidebar with new collections data")
+                        collections = self.list_repository.get_collections()
+                        self.sidebar.populate_collections(collections)
+                        
+                        # Select the imported list
+                        self.sidebar.select_list(imported_path)
+                        log.debug(f"Selected imported list in sidebar: {imported_path}")
                     
                     # Open the imported list
                     self.open_album_list(imported_path)
                     
-                    # Add collection info to the metadata
-                    if hasattr(self, 'list_metadata'):
-                        self.list_metadata["collection"] = collection_name
+                    # Show success message
+                    self.status_bar.showMessage(f"Imported {len(albums)} albums to collection: {collection_name}")
+                    QMessageBox.information(
+                        self,
+                        "Import Successful",
+                        f"Successfully imported {len(albums)} albums to collection: {collection_name}"
+                    )
                     
-                    self.status_bar.showMessage(f"Imported list from {file_path} to collection: {collection_name}")
-                    log.info(f"Successfully imported list from {file_path} to collection: {collection_name}")
+                except Exception as e:
+                    log.error(f"Error during import process: {e}")
+                    log.debug(traceback.format_exc())
+                    QMessageBox.critical(
+                        self,
+                        "Import Error",
+                        f"Failed to import the list: {str(e)}"
+                    )
             else:
-                # Fallback to old import method
-                log.warning("No repository available, using direct file import")
-                self.open_album_list(file_path)
-                    
+                # Repository not available
+                log.error("Cannot import - list repository not available")
+                QMessageBox.critical(
+                    self,
+                    "Import Error",
+                    "Cannot import list - repository not available"
+                )
+                        
         except Exception as e:
-            log.error(f"Error importing list: {e}")
+            log.error(f"Error in import process: {e}")
             log.debug(traceback.format_exc())
             QMessageBox.critical(
                 self,
@@ -591,11 +731,27 @@ class MainWindow(QMainWindow):
             # Set the albums
             self.albums = albums
             
+            # Check if we already have a table view
+            if not hasattr(self, 'table_view'):
+                # Create a new main panel with table view
+                new_panel = self.create_main_panel()
+                old_panel = self.main_panel
+                
+                # Replace the old panel with the new one
+                self.splitter.replaceWidget(1, new_panel)
+                self.main_panel = new_panel
+                
+                # Schedule old panel for deletion
+                if old_panel:
+                    old_panel.deleteLater()
+            
             # Create a new model with the loaded albums
             self.model = AlbumTableModel(self.albums)
+            
+            # Set the model to the table view
             self.table_view.setModel(self.model)
             
-            # Set up the table again to ensure proper display
+            # Set up enhanced drag and drop
             self.setup_enhanced_drag_drop()
             
             # Store the metadata
@@ -612,6 +768,10 @@ class MainWindow(QMainWindow):
             self.status_bar.showMessage(f"Opened {len(albums)} albums from {file_path}")
             log.info(f"Successfully opened {len(albums)} albums from {file_path}")
             
+            # Update sidebar selection if available
+            if hasattr(self, 'sidebar'):
+                self.sidebar.select_list(file_path)
+                
         except Exception as e:
             # Show error message
             log.error(f"Error opening file {file_path}: {e}")
@@ -961,7 +1121,7 @@ class MainWindow(QMainWindow):
             )
 
     
-    def create_main_panel(self) -> QWidget:
+    def create_main_panel(self):
         """Create the main content panel with header and album table."""
         log.debug("Creating main panel")
         try:
@@ -1053,7 +1213,7 @@ class MainWindow(QMainWindow):
             layout.addWidget(title_bar)
             
             # Create and set up the table view - CHANGE THE ORDER OF OPERATIONS
-            self.table_view = QTableView()
+            self.table_view = QTableView()  # Store reference directly in self
             log.debug("Creating table view")
             
             # Basic setup that doesn't depend on model
@@ -1133,12 +1293,264 @@ class MainWindow(QMainWindow):
                 "date_created": datetime.now().isoformat(),
                 "date_modified": datetime.now().isoformat()
             }
-                
+                    
             return panel
         except Exception as e:
             log.critical(f"Error in create_main_panel: {e}")
             log.critical(traceback.format_exc())
             raise
+
+    def create_sidebar_panel(self):
+        """Create the sidebar panel with Spotify-style navigation."""
+        log.debug("Creating sidebar panel")
+        try:
+            # Create the sidebar panel
+            self.sidebar = SidebarPanel()
+            
+            # Connect signals
+            self.sidebar.home_clicked.connect(self._show_home_dashboard)
+            self.sidebar.collection_clicked.connect(self._show_collection)
+            self.sidebar.list_clicked.connect(self.open_album_list)
+            self.sidebar.create_list_clicked.connect(self._new_file)
+            
+            # Populate with collections data if available
+            if hasattr(self, 'list_repository') and self.list_repository:
+                collections = self.list_repository.get_collections()
+                self.sidebar.populate_collections(collections)
+            
+            return self.sidebar
+        except Exception as e:
+            log.critical(f"Error creating sidebar panel: {e}")
+            log.critical(traceback.format_exc())
+            # Return an empty widget as fallback
+            return QWidget()
+
+    def _show_home_dashboard(self):
+        """Show the home dashboard view."""
+        log.debug("Showing home dashboard")
+        try:
+            # For now, just show a simple welcome message
+            # In a full implementation, this would show recent lists, activity, etc.
+            from PyQt6.QtWidgets import QLabel, QVBoxLayout, QWidget
+            
+            # Create a temporary dashboard widget
+            dashboard = QWidget()
+            layout = QVBoxLayout(dashboard)
+            
+            # Add welcome message
+            welcome = QLabel("Welcome to SuShe NG")
+            welcome.setFont(QFont("Segoe UI", 24, QFont.Weight.Bold))
+            welcome.setStyleSheet("color: #FFFFFF;")
+            layout.addWidget(welcome, 0, Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter)
+            
+            # Add description
+            description = QLabel("Your music collection manager with a Spotify-like interface")
+            description.setFont(QFont("Segoe UI", 14))
+            description.setStyleSheet("color: #B3B3B3;")
+            layout.addWidget(description, 0, Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter)
+            
+            # Add some space
+            layout.addSpacing(40)
+            
+            # Create a label for recent activity
+            recent_header = QLabel("Recent Activity")
+            recent_header.setFont(QFont("Segoe UI", 18, QFont.Weight.Bold))
+            recent_header.setStyleSheet("color: #FFFFFF;")
+            layout.addWidget(recent_header)
+            
+            # Check if we have recent files
+            if hasattr(self, 'config') and self.config:
+                recent_files = self.config.get_recent_files()
+                if recent_files:
+                    # Show the 5 most recent files
+                    for i, file_path in enumerate(recent_files[:5]):
+                        # Create a button for each file
+                        file_name = os.path.basename(file_path)
+                        title = file_name.replace('.sush', '').replace('.json', '')
+                        
+                        item = QPushButton(title)
+                        item.setStyleSheet("""
+                            QPushButton {
+                                background-color: #282828;
+                                color: #FFFFFF;
+                                border-radius: 4px;
+                                padding: 12px;
+                                text-align: left;
+                            }
+                            QPushButton:hover {
+                                background-color: #333333;
+                            }
+                        """)
+                        item.clicked.connect(lambda checked, path=file_path: self.open_album_list(path))
+                        layout.addWidget(item)
+                else:
+                    # No recent files
+                    no_recent = QLabel("No recent activity")
+                    no_recent.setStyleSheet("color: #B3B3B3;")
+                    layout.addWidget(no_recent)
+            
+            # Add stretch to push everything to the top
+            layout.addStretch(1)
+            
+            # Replace the current central widget
+            if hasattr(self, 'main_panel'):
+                old_panel = self.main_panel
+                self.splitter.replaceWidget(1, dashboard)
+                self.main_panel = dashboard
+                if old_panel:
+                    old_panel.deleteLater()
+                
+            self.status_bar.showMessage("Viewing Home Dashboard")
+            
+        except Exception as e:
+            log.error(f"Error showing home dashboard: {e}")
+            log.debug(traceback.format_exc())
+
+    def _show_collection(self, collection_name):
+        """
+        Show all lists in a collection.
+        
+        Args:
+            collection_name: Name of the collection to show
+        """
+        log.debug(f"Showing collection: {collection_name}")
+        try:
+            # Get lists in this collection
+            if hasattr(self, 'list_repository') and self.list_repository:
+                collections = self.list_repository.get_collections()
+                
+                if collection_name in collections:
+                    collection_lists = collections[collection_name]
+                    
+                    # Create a widget to display the collection
+                    from PyQt6.QtWidgets import QLabel, QVBoxLayout, QWidget, QScrollArea, QGridLayout
+                    
+                    # Create a scrollable container
+                    scroll = QScrollArea()
+                    scroll.setWidgetResizable(True)
+                    scroll.setFrameShape(QFrame.Shape.NoFrame)
+                    
+                    # Create the content widget
+                    content = QWidget()
+                    content_layout = QVBoxLayout(content)
+                    content_layout.setContentsMargins(16, 16, 16, 16)
+                    content_layout.setSpacing(16)
+                    
+                    # Add collection title
+                    title = QLabel(collection_name)
+                    title.setFont(QFont("Segoe UI", 24, QFont.Weight.Bold))
+                    title.setStyleSheet("color: #FFFFFF;")
+                    content_layout.addWidget(title)
+                    
+                    # Add list count
+                    count_label = QLabel(f"{len(collection_lists)} lists")
+                    count_label.setFont(QFont("Segoe UI", 14))
+                    count_label.setStyleSheet("color: #B3B3B3;")
+                    content_layout.addWidget(count_label)
+                    
+                    content_layout.addSpacing(20)
+                    
+                    # Create a grid for the lists
+                    grid = QGridLayout()
+                    grid.setSpacing(16)
+                    
+                    if collection_lists:
+                        # Add each list to the grid
+                        for i, list_info in enumerate(collection_lists):
+                            row = i // 3
+                            col = i % 3
+                            
+                            # Create a card for the list
+                            card = QFrame()
+                            card.setFixedSize(180, 220)
+                            card.setFrameShape(QFrame.Shape.StyledPanel)
+                            card.setStyleSheet("""
+                                QFrame {
+                                    background-color: #282828;
+                                    border-radius: 8px;
+                                }
+                            """)
+                            
+                            card_layout = QVBoxLayout(card)
+                            card_layout.setContentsMargins(16, 16, 16, 16)
+                            
+                            # Add title
+                            list_title = QLabel(list_info.get("title", "Untitled List"))
+                            list_title.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
+                            list_title.setStyleSheet("color: #FFFFFF;")
+                            list_title.setWordWrap(True)
+                            card_layout.addWidget(list_title)
+                            
+                            # Add album count
+                            album_count = QLabel(f"{list_info.get('album_count', 0)} albums")
+                            album_count.setStyleSheet("color: #B3B3B3;")
+                            card_layout.addWidget(album_count)
+                            
+                            # Add stretch to push everything to the top
+                            card_layout.addStretch(1)
+                            
+                            # Make the card clickable
+                            from PyQt6.QtCore import QEvent
+                            
+                            class ClickableFrame(QFrame):
+                                def __init__(self, file_path, parent=None):
+                                    super().__init__(parent)
+                                    self.file_path = file_path
+                                    self.setCursor(Qt.CursorShape.PointingHandCursor)
+                                
+                                def mousePressEvent(self, event):
+                                    if event.button() == Qt.MouseButton.LeftButton:
+                                        self.parent().parent().parent().parent().open_album_list(self.file_path)
+                            
+                            # Replace the card with the clickable version
+                            clickable_card = ClickableFrame(list_info.get("file_path", ""))
+                            clickable_card.setFixedSize(180, 220)
+                            clickable_card.setFrameShape(QFrame.Shape.StyledPanel)
+                            clickable_card.setStyleSheet("""
+                                QFrame {
+                                    background-color: #282828;
+                                    border-radius: 8px;
+                                }
+                                QFrame:hover {
+                                    background-color: #333333;
+                                }
+                            """)
+                            
+                            clickable_layout = QVBoxLayout(clickable_card)
+                            clickable_layout.setContentsMargins(16, 16, 16, 16)
+                            clickable_layout.addWidget(list_title)
+                            clickable_layout.addWidget(album_count)
+                            clickable_layout.addStretch(1)
+                            
+                            grid.addWidget(clickable_card, row, col)
+                    else:
+                        # No lists in this collection
+                        empty_label = QLabel("No lists in this collection")
+                        empty_label.setStyleSheet("color: #B3B3B3;")
+                        grid.addWidget(empty_label, 0, 0)
+                    
+                    # Add the grid to the content layout
+                    content_layout.addLayout(grid)
+                    
+                    # Add stretch to push everything to the top
+                    content_layout.addStretch(1)
+                    
+                    # Set the content widget
+                    scroll.setWidget(content)
+                    
+                    # Replace the current central widget
+                    if hasattr(self, 'main_panel'):
+                        old_panel = self.main_panel
+                        self.splitter.replaceWidget(1, scroll)
+                        self.main_panel = scroll
+                        if old_panel:
+                            old_panel.deleteLater()
+                    
+                    self.status_bar.showMessage(f"Viewing collection: {collection_name}")
+        except Exception as e:
+            log.error(f"Error showing collection: {e}")
+            log.debug(traceback.format_exc())
+
 
     def highlight_row(self, row_index):
         """

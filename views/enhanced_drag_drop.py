@@ -43,6 +43,9 @@ def apply_drag_drop_enhancements(table_view, table_model, table_delegate):
     table_view.startDrag = lambda supportedActions: start_drag(table_view, supportedActions)
     table_view.create_drag_preview = lambda album_names: create_drag_preview(table_view, album_names)
     
+    # Add property to track drag state
+    table_view.isDragInProgress = False
+    
     # 5. Enhance the delegate's paint method with drag handles
     # Store a reference to the original paint method outside the delegate to avoid recursion
     original_paint = table_delegate.paint
@@ -129,6 +132,9 @@ def start_drag(self, supportedActions):
     
     log.debug(f"Starting drag operation for {len(rows)} rows")
     
+    # Set drag in progress flag
+    self.isDragInProgress = True
+    
     # Create the MIME data
     mime_data = model.mimeData(indexes)
     
@@ -164,6 +170,10 @@ def start_drag(self, supportedActions):
     # Execute the drag
     log.debug("Executing drag operation")
     result = drag.exec(supportedActions)
+    
+    # Reset the drag in progress flag
+    self.isDragInProgress = False
+    
     log.debug(f"Drag operation completed with result: {result}")
 
 
@@ -341,8 +351,17 @@ def paint_with_drag_handle(self, painter, option, index, original_paint):
     original_paint(painter, option, index)
     
     # Then add our drag handle enhancements when hovering over the first column
+    # BUT only when not in a drag operation
     col = index.column()
-    if col == 0 and option.state & QStyle.StateFlag.State_MouseOver:
+    
+    # Check if we are in a drag operation by looking at the view
+    view = self.parent()
+    in_drag = False
+    if hasattr(view, 'isDragInProgress') and view.isDragInProgress:
+        in_drag = True
+    
+    # Only show hover effects if we're not in the middle of a drag operation
+    if col == 0 and option.state & QStyle.StateFlag.State_MouseOver and not in_drag:
         # Overlay a subtle drag indicator
         rect = option.rect
         

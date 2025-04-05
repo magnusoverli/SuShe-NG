@@ -94,16 +94,34 @@ def set_application_icon(app: QApplication) -> None:
     """
     log.debug("Setting application icon...")
     try:
+        # For Windows: Set the App ID for taskbar grouping and icon display
+        if sys.platform == "win32":
+            try:
+                # This helps Windows properly associate the icon with the app in taskbar
+                import ctypes
+                app_id = f"{ORG_DOMAIN}.{APP_NAME}"
+                log.debug(f"Setting Windows App ID: {app_id}")
+                ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(app_id)
+            except Exception as e:
+                log.warning(f"Could not set Windows App ID: {e}")
+
+        # Check for all possible icon files
+        ico_exists = resource_exists(ICON_PATH_ICO)
+        icns_exists = resource_exists(ICON_PATH_ICNS)
+        png_exists = resource_exists(ICON_PATH)
+        
+        log.debug(f"Icon file availability - ICO: {ico_exists}, ICNS: {icns_exists}, PNG: {png_exists}")
+        
         # Determine which icon file to use based on platform
-        if sys.platform == "win32" and resource_exists(ICON_PATH_ICO):
+        if sys.platform == "win32" and ico_exists:
             # Windows prefers .ico files
             icon_path = get_resource_path(ICON_PATH_ICO)
             log.debug(f"Using Windows icon: {icon_path}")
-        elif sys.platform == "darwin" and resource_exists(ICON_PATH_ICNS):
+        elif sys.platform == "darwin" and icns_exists:
             # macOS prefers .icns files
             icon_path = get_resource_path(ICON_PATH_ICNS)
             log.debug(f"Using macOS icon: {icon_path}")
-        elif resource_exists(ICON_PATH):
+        elif png_exists:
             # Default to PNG for other platforms or fallback
             icon_path = get_resource_path(ICON_PATH)
             log.debug(f"Using default icon: {icon_path}")
@@ -112,9 +130,23 @@ def set_application_icon(app: QApplication) -> None:
             log.warning("No icon file found, skipping")
             return
         
+        # Check if the file actually exists on disk
+        if not os.path.exists(icon_path):
+            log.warning(f"Icon file not found at resolved path: {icon_path}")
+            return
+            
         # Set the application icon
         app_icon = QIcon(icon_path)
+        
+        # Check if the icon loaded successfully
+        if app_icon.isNull():
+            log.warning("Failed to load icon - QIcon reports it as null")
+        else:
+            log.debug(f"Icon loaded successfully with sizes: {app_icon.availableSizes()}")
+            
+        # Set the icon for both application and window
         app.setWindowIcon(app_icon)
+        
         log.debug("Application icon set")
     except Exception as e:
         log.error(f"Error setting application icon: {e}")

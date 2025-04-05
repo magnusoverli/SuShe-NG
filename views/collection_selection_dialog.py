@@ -10,6 +10,11 @@ from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushBut
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 
+from utils.logging_utils import get_module_logger
+
+# Get module logger
+log = get_module_logger()
+
 class CollectionSelectionDialog(QDialog):
     """Dialog for selecting a collection when creating or saving a list."""
     
@@ -26,6 +31,7 @@ class CollectionSelectionDialog(QDialog):
         """
         super().__init__(parent)
         
+        log.debug(f"Creating collection selection dialog with {len(collection_names)} collections")
         self.collection_names = collection_names
         self.setWindowTitle(title)
         self.setMinimumWidth(350)
@@ -85,6 +91,7 @@ class CollectionSelectionDialog(QDialog):
         
         # Existing collections section
         if collection_names:
+            log.debug("Adding existing collections list")
             existing_label = QLabel("Select an existing collection:")
             layout.addWidget(existing_label)
             
@@ -100,6 +107,8 @@ class CollectionSelectionDialog(QDialog):
                 self.collection_list.setCurrentRow(0)
                 
             layout.addWidget(self.collection_list)
+        else:
+            log.debug("No existing collections to display")
         
         # New collection section
         new_label = QLabel("Or create a new collection:")
@@ -124,6 +133,8 @@ class CollectionSelectionDialog(QDialog):
         button_layout.addWidget(self.ok_button)
         
         layout.addLayout(button_layout)
+        
+        log.debug("Collection selection dialog initialized")
     
     def get_selected_collection(self):
         """
@@ -132,18 +143,23 @@ class CollectionSelectionDialog(QDialog):
         Returns:
             Tuple of (collection_name, is_new)
         """
+        log.debug("Getting selected collection")
         # Check if user entered a new collection name
         new_name = self.new_collection_input.text().strip()
         if new_name:
+            log.debug(f"New collection name entered: {new_name}")
             return new_name, True
             
         # Otherwise use the selected existing collection
         if hasattr(self, 'collection_list'):
             current_item = self.collection_list.currentItem()
             if current_item:
-                return current_item.text(), False
+                collection_name = current_item.text()
+                log.debug(f"Existing collection selected: {collection_name}")
+                return collection_name, False
                 
         # If we get here, no valid selection was made
+        log.warning("No valid collection selected")
         return None, False
 
 
@@ -161,11 +177,14 @@ def select_collection(collection_names, parent=None, title="Select Collection",
     Returns:
         Tuple of (collection_name, is_new, ok)
     """
+    log.debug(f"Showing collection selection dialog with {len(collection_names)} collections")
     dialog = CollectionSelectionDialog(collection_names, parent, title, message)
     result = dialog.exec()
     
     if result == QDialog.DialogCode.Accepted:
         collection_name, is_new = dialog.get_selected_collection()
+        log.info(f"Collection selection result: {collection_name}, is_new: {is_new}")
         return collection_name, is_new, True
     
+    log.debug("Collection selection cancelled")
     return None, False, False

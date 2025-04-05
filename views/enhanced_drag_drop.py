@@ -1,11 +1,18 @@
 """
-Save this file as views/enhanced_drag_drop.py
+views/enhanced_drag_drop.py
+
+Enhanced drag and drop functionality for table views.
 """
 
 from PyQt6.QtGui import (QDrag, QPainter, QPixmap, QColor, QBrush, QPen, QFont, 
                     QFontMetrics, QLinearGradient, QImage)
 from PyQt6.QtCore import Qt, QMimeData, QByteArray, QSize, QPoint, QModelIndex, QRect, QEvent
 from PyQt6.QtWidgets import QStyle, QAbstractItemView
+
+from utils.logging_utils import get_module_logger
+
+# Get module logger
+log = get_module_logger()
 
 
 def apply_drag_drop_enhancements(table_view, table_model, table_delegate):
@@ -17,6 +24,8 @@ def apply_drag_drop_enhancements(table_view, table_model, table_delegate):
         table_model: The AlbumTableModel instance
         table_delegate: The AlbumTableDelegate instance
     """
+    log.debug("Applying drag and drop enhancements")
+    
     # 1. Enhance the table model's mime data method
     table_model.original_mime_data = table_model.mimeData
     table_model.mimeData = lambda indexes: enhanced_mime_data(table_model, indexes)
@@ -57,6 +66,9 @@ def apply_drag_drop_enhancements(table_view, table_model, table_delegate):
     
     # 8. Add hover tracking for drag handle indicators
     table_view.setMouseTracking(True)
+    
+    log.debug("Drag and drop enhancements applied")
+
 
 def enhanced_mime_data(self, indexes):
     """
@@ -74,6 +86,7 @@ def enhanced_mime_data(self, indexes):
     # Get unique rows
     rows = set(index.row() for index in indexes if index.isValid())
     if not rows:
+        log.debug("No valid rows for drag operation")
         return mime_data
     
     # Store row indices as before
@@ -94,6 +107,7 @@ def enhanced_mime_data(self, indexes):
     if album_names:
         mime_data.setData("application/x-album-names", QByteArray("\n".join(album_names).encode()))
     
+    log.debug(f"Created enhanced mime data for {len(rows)} rows")
     return mime_data
 
 
@@ -106,11 +120,14 @@ def start_drag(self, supportedActions):
     """
     indexes = self.selectedIndexes()
     if not indexes:
+        log.debug("No indexes selected for drag")
         return
     
     # Get the model and unique rows
     model = self.model()
     rows = set(index.row() for index in indexes)
+    
+    log.debug(f"Starting drag operation for {len(rows)} rows")
     
     # Create the MIME data
     mime_data = model.mimeData(indexes)
@@ -118,9 +135,11 @@ def start_drag(self, supportedActions):
     # Create a pixmap for drag preview
     if mime_data.hasFormat("application/x-album-names"):
         album_names = bytes(mime_data.data("application/x-album-names")).decode().split("\n")
+        log.debug(f"Creating rich drag preview with {len(album_names)} album names")
         drag_pixmap = self.create_drag_preview(album_names)
     else:
         # Fallback to a simple colored rectangle
+        log.debug("Creating simple drag preview (no album names)")
         drag_pixmap = QPixmap(300, 70)
         drag_pixmap.fill(Qt.GlobalColor.transparent)
         painter = QPainter(drag_pixmap)
@@ -143,7 +162,9 @@ def start_drag(self, supportedActions):
     self.setDragDropOverwriteMode(False)
     
     # Execute the drag
+    log.debug("Executing drag operation")
     result = drag.exec(supportedActions)
+    log.debug(f"Drag operation completed with result: {result}")
 
 
 def create_drag_preview(self, album_names):
@@ -156,6 +177,7 @@ def create_drag_preview(self, album_names):
     Returns:
         QPixmap with the drag preview
     """
+    log.debug(f"Creating drag preview for {len(album_names)} albums")
     # Set maximum number of items to show
     max_items = 3
     display_names = album_names[:max_items]
@@ -235,6 +257,7 @@ def create_drag_preview(self, album_names):
                          Qt.AlignmentFlag.AlignVCenter, f"and {more_count} more...")
     
     painter.end()
+    log.debug(f"Created drag preview pixmap: {pixmap.width()}x{pixmap.height()}")
     return pixmap
 
 
@@ -253,9 +276,11 @@ def enhanced_drop_mime_data(self, data, action, row, column, parent):
         True if the data was successfully handled, False otherwise
     """
     if not data.hasFormat("application/x-album-row"):
+        log.debug("Drop data doesn't have album row format")
         return False
     
     if action == Qt.DropAction.IgnoreAction:
+        log.debug("Drop action is IgnoreAction, accepting")
         return True
     
     encoded_data = data.data("application/x-album-row")
@@ -268,7 +293,10 @@ def enhanced_drop_mime_data(self, data, action, row, column, parent):
     else:
         target_row = self.rowCount()
     
+    log.debug(f"Drop operation: source row {source_row} to target row {target_row}")
+    
     if source_row == target_row or source_row == target_row - 1:
+        log.debug("Invalid drop target (same position), rejecting")
         return False
     
     # Emit signals for custom animation
@@ -279,6 +307,7 @@ def enhanced_drop_mime_data(self, data, action, row, column, parent):
     self.last_drag_target = target_row
     
     # Move the item
+    log.debug(f"Moving album from row {source_row} to row {target_row}")
     album = self.albums.pop(source_row)
     
     if source_row < target_row:
@@ -288,8 +317,11 @@ def enhanced_drop_mime_data(self, data, action, row, column, parent):
     self.endResetModel()
     
     # Notify view of the change
-    self.dataChanged.emit(self.index(min(source_row, target_row), 0),
-                         self.index(max(source_row, target_row), self.columnCount() - 1))
+    min_row = min(source_row, target_row)
+    max_row = max(source_row, target_row)
+    log.debug(f"Emitting dataChanged for rows {min_row} to {max_row}")
+    self.dataChanged.emit(self.index(min_row, 0),
+                         self.index(max_row, self.columnCount() - 1))
     
     return True
 

@@ -8,11 +8,16 @@ This module handles importing, exporting, and managing album lists.
 import os
 import json
 import base64
+import traceback
 from datetime import datetime, date
 from typing import List, Dict, Any, Tuple
-
+from pathlib import Path
 
 from models.album import Album
+from utils.logging_utils import get_module_logger
+
+# Get module logger
+log = get_module_logger()
 
 
 class AlbumListManager:
@@ -31,6 +36,7 @@ class AlbumListManager:
         Args:
             covers_directory: Directory to store album cover images
         """
+        log.debug(f"Initializing AlbumListManager with covers directory: {covers_directory}")
         self.covers_directory = covers_directory
         os.makedirs(covers_directory, exist_ok=True)
     
@@ -44,13 +50,16 @@ class AlbumListManager:
         Returns:
             tuple: (list of Album objects, metadata dict)
         """
+        log.info(f"Importing from old format: {file_path}")
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
             
+            log.debug(f"Loaded old format JSON with {len(data)} albums")
             albums = []
             # Extract list title from filename if available
-            list_name = os.path.splitext(os.path.basename(file_path))[0]
+            list_name = Path(file_path).stem
+            log.debug(f"Using list name from filename: {list_name}")
             
             for idx, album_data in enumerate(data):
                 # Convert release date string to date object
@@ -61,6 +70,7 @@ class AlbumListManager:
                     release_date = date(year, month, day)
                 except (ValueError, AttributeError):
                     # Fallback to today's date if parsing fails
+                    log.warning(f"Failed to parse release date: {release_date_str}, using today's date")
                     release_date = date.today()
                 
                 # For old format, keep image data directly in the Album object
@@ -86,20 +96,24 @@ class AlbumListManager:
                 album.rank = album_data.get('rank', idx + 1)
                 
                 albums.append(album)
+                log.debug(f"Imported album: {album.artist} - {album.name}")
             
             # Create metadata for the list
             metadata = {
                 "title": list_name,
-                "description": f"Imported from {os.path.basename(file_path)}",
+                "description": f"Imported from {Path(file_path).name}",
                 "date_created": datetime.now().isoformat(),
                 "date_modified": datetime.now().isoformat(),
                 "source_file": file_path,
                 "album_count": len(albums)
             }
             
+            log.info(f"Successfully imported {len(albums)} albums from {file_path}")
             return albums, metadata
             
         except Exception as e:
+            log.error(f"Failed to import album list: {e}")
+            log.debug(traceback.format_exc())
             raise ImportError(f"Failed to import album list: {e}")
     
     def export_to_new_format(self, albums: List[Album], metadata: Dict[str, Any], 
@@ -112,9 +126,11 @@ class AlbumListManager:
             metadata: Metadata for the album list
             file_path: Path to save the new format JSON file
         """
+        log.info(f"Exporting {len(albums)} albums to {file_path}")
         # Ensure the file has the correct extension
         if not file_path.endswith(self.FILE_EXTENSION):
             file_path += self.FILE_EXTENSION
+            log.debug(f"Added extension to file path: {file_path}")
         
         # Load points mapping from resources
         points_mapping = self._load_points_mapping()
@@ -131,6 +147,8 @@ class AlbumListManager:
             },
             "albums": []
         }
+        
+        log.debug(f"Building export data structure with metadata: {data['metadata']['title']}")
         
         # Add each album to the data structure
         for idx, album in enumerate(albums):
@@ -157,12 +175,17 @@ class AlbumListManager:
                 "country": getattr(album, "country", "")
             }
             data["albums"].append(album_data)
+            log.debug(f"Added album to export: {album.artist} - {album.name}")
         
         # Save the data to the file
         try:
+            log.debug(f"Writing export data to file: {file_path}")
             with open(file_path, 'w', encoding='utf-8') as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)
+            log.info(f"Successfully exported {len(albums)} albums to {file_path}")
         except Exception as e:
+            log.error(f"Failed to export album list: {e}")
+            log.debug(traceback.format_exc())
             raise ExportError(f"Failed to export album list: {e}")
 
     def _load_points_mapping(self) -> Dict[str, int]:
@@ -172,20 +195,25 @@ class AlbumListManager:
         Returns:
             A dictionary mapping rank (as string) to points
         """
+        log.debug("Loading points mapping")
         try:
             # Try to load the points mapping from the resources directory
             from resources import get_resource_path
             points_path = get_resource_path("points.json")
             
             with open(points_path, 'r', encoding='utf-8') as f:
-                return json.load(f)
+                mapping = json.load(f)
+                log.debug(f"Loaded points mapping from {points_path}")
+                return mapping
         except Exception as e:
             # If there's an error, use a default mapping
-            print(f"Warning: Could not load points mapping: {e}")
-            print("Using default points mapping (rank = points)")
+            log.warning(f"Could not load points mapping: {e}")
+            log.debug(traceback.format_exc())
+            log.info("Using default points mapping (rank = points)")
             
             # Default mapping: rank = points
-            return {str(i): max(1, 61-i) for i in range(1, 61)}
+            default_mapping = {str(i): max(1, 61-i) for i in range(1, 61)}
+            return default_mapping
     
     def import_from_new_format(self, file_path: str) -> Tuple[List[Album], Dict[str, Any]]:
         """
@@ -197,6 +225,7 @@ class AlbumListManager:
         Returns:
             tuple: (list of Album objects, metadata dict)
         """
+        log.info(f"Importing from new format: {file_path}")
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
@@ -204,20 +233,25 @@ class AlbumListManager:
             # Check format version for compatibility
             format_version = data.get("format_version", 0)
             if format_version > self.CURRENT_FORMAT_VERSION:
-                print(f"Warning: File format version ({format_version}) is newer than supported ({self.CURRENT_FORMAT_VERSION})")
+                log.warning(f"File format version ({format_version}) is newer than supported ({self.CURRENT_FORMAT_VERSION})")
             
             # Extract metadata
             metadata = data.get("metadata", {})
+            log.debug(f"Loaded file metadata: {metadata.get('title', 'Untitled')}")
             
             # Process albums
             albums = []
-            for album_data in data.get("albums", []):
+            album_data_list = data.get("albums", [])
+            log.debug(f"Found {len(album_data_list)} albums in file")
+            
+            for album_data in album_data_list:
                 # Parse release date
                 release_date_str = album_data.get("release_date")
                 if release_date_str:
                     try:
                         release_date = date.fromisoformat(release_date_str)
                     except ValueError:
+                        log.warning(f"Failed to parse release date: {release_date_str}, using today's date")
                         release_date = date.today()
                 else:
                     release_date = date.today()
@@ -246,8 +280,22 @@ class AlbumListManager:
                     album.points = album_data["points"]
                 
                 albums.append(album)
+                log.debug(f"Imported album: {album.artist} - {album.name}")
             
+            log.info(f"Successfully imported {len(albums)} albums from {file_path}")
             return albums, metadata
         
         except Exception as e:
+            log.error(f"Failed to import album list: {e}")
+            log.debug(traceback.format_exc())
             raise ImportError(f"Failed to import album list: {e}")
+
+
+class ImportError(Exception):
+    """Exception raised when importing an album list fails."""
+    pass
+
+
+class ExportError(Exception):
+    """Exception raised when exporting an album list fails."""
+    pass

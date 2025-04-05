@@ -10,6 +10,11 @@ from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 
+from utils.logging_utils import get_module_logger
+
+# Get module logger
+log = get_module_logger()
+
 
 class NewListDialog(QDialog):
     """Dialog for creating a new album list with collection selection."""
@@ -24,6 +29,7 @@ class NewListDialog(QDialog):
         """
         super().__init__(parent)
         
+        log.debug(f"Initializing NewListDialog with {len(collection_names)} collections")
         self.collection_names = collection_names
         self.setWindowTitle("Create New List")
         self.setMinimumWidth(400)
@@ -113,6 +119,7 @@ class NewListDialog(QDialog):
         self.collection_combo = QComboBox()
         
         # Populate with existing collections
+        log.debug("Populating collection dropdown")
         for name in collection_names:
             self.collection_combo.addItem(name)
             
@@ -142,6 +149,7 @@ class NewListDialog(QDialog):
         
         # Set focus to title field
         self.title_edit.setFocus()
+        log.debug("NewListDialog initialized")
     
     def _handle_collection_change(self, index):
         """
@@ -152,16 +160,19 @@ class NewListDialog(QDialog):
         """
         if index == self.collection_combo.count() - 1:
             # User selected "Create new collection..."
+            log.debug("User selected 'Create new collection...'")
             name, ok = QInputDialog.getText(
                 self, "Create Collection", "Collection name:")
             
             if ok and name:
+                log.debug(f"User entered new collection name: {name}")
                 # Insert the new name before the "Create new" option
                 self.collection_combo.insertItem(index, name)
                 self.collection_combo.setCurrentIndex(index)
                 return
                 
             # If user canceled, revert to first collection
+            log.debug("User cancelled new collection creation")
             if self.collection_combo.count() > 1:
                 self.collection_combo.setCurrentIndex(0)
     
@@ -172,9 +183,11 @@ class NewListDialog(QDialog):
         Returns:
             Dictionary with list title, description, collection name, and is_new_collection flag
         """
+        log.debug("Getting list info")
         title = self.title_edit.text().strip()
         if not title:
             title = "My Album List"
+            log.debug("Using default title 'My Album List'")
             
         description = self.description_edit.text().strip()
         
@@ -185,12 +198,14 @@ class NewListDialog(QDialog):
         is_new_collection = (collection_index != self.collection_combo.count() - 1 and
                              collection_name not in self.collection_names)
         
-        return {
+        list_info = {
             "title": title,
             "description": description,
             "collection_name": collection_name,
             "is_new_collection": is_new_collection
         }
+        log.debug(f"List info: {list_info}")
+        return list_info
 
 
 def show_new_list_dialog(collection_names, parent=None):
@@ -204,10 +219,14 @@ def show_new_list_dialog(collection_names, parent=None):
     Returns:
         Dictionary with list info or None if canceled
     """
+    log.info("Showing new list dialog")
     dialog = NewListDialog(collection_names, parent)
     result = dialog.exec()
     
     if result == QDialog.DialogCode.Accepted:
-        return dialog.get_list_info()
+        list_info = dialog.get_list_info()
+        log.info(f"New list dialog accepted: '{list_info['title']}' in collection '{list_info['collection_name']}'")
+        return list_info
     
+    log.debug("New list dialog cancelled")
     return None

@@ -6,6 +6,7 @@ import os
 import base64
 from datetime import datetime
 from typing import Optional
+import traceback
 
 from PyQt6.QtGui import (QAction, QIcon, QCloseEvent, QPixmap, QColor,
                     QPainter, QPen, QPainterPath, QFont, QImage)
@@ -14,6 +15,7 @@ from PyQt6.QtWidgets import (QMainWindow, QTableView, QStatusBar, QSplitter,
                            QPushButton, QLineEdit, QFrame, QHeaderView, QMessageBox,
                             QStyledItemDelegate, QStyle)
 from PyQt6.QtCore import (Qt, QEvent, QRect, QRectF)
+
 from views.import_dialog import show_import_dialog
 from utils.album_list_manager import AlbumListManager
 from models.album_table_model import AlbumTableModel
@@ -21,9 +23,14 @@ from utils.theme import SpotifyTheme
 from utils.config import Config
 from resources import get_resource_path, resource_exists
 from metadata import ICON_PATH
+from utils.logging_utils import get_module_logger
 
 from utils.list_repository import ListRepository
 from PyQt6.QtWidgets import QInputDialog
+
+# Get module logger
+log = get_module_logger()
+
 
 class AlbumTableDelegate(QStyledItemDelegate):
     """Custom delegate for album table to add Spotify-like styling with album artwork."""
@@ -33,6 +40,7 @@ class AlbumTableDelegate(QStyledItemDelegate):
         super().__init__(parent)
         # Cache for placeholder images to avoid recreating them
         self.placeholder_cache = {}
+        log.debug("AlbumTableDelegate initialized")
     
     def paint(self, painter, option, index):
         """Custom paint method to style table cells with album artwork."""
@@ -77,7 +85,7 @@ class AlbumTableDelegate(QStyledItemDelegate):
                         qimage.loadFromData(image_data)
                         pixmap = QPixmap.fromImage(qimage)
                     except Exception as e:
-                        print(f"Error loading image from base64: {e}")
+                        log.warning(f"Error loading image from base64: {e}")
                         pixmap = self._get_placeholder_image(image_size)
                 elif hasattr(album, 'cover_image') and album.cover_image:
                     # Fallback to file path (for backward compatibility)
@@ -198,108 +206,109 @@ class MainWindow(QMainWindow):
             config: Application configuration manager (optional)
             list_repository: Repository for list management (optional)
         """
-        print("MainWindow.__init__ starting...")
+        log.debug("MainWindow.__init__ starting...")
         try:
             super().__init__()
-            print("Super initialized")
+            log.debug("Super initialized")
             
             # Store the configuration manager
             self.config = config or Config()
-            print("Config stored")
+            log.debug("Config stored")
             
             # Store the list repository
             self.list_repository = list_repository or ListRepository()
-            print("List repository stored")
+            log.debug("List repository stored")
             
             self.setWindowTitle("SuShe NG")
             self.setMinimumSize(1000, 700)
-            print("Window title and size set")
+            log.debug("Window title and size set")
             
             # Set window icon if available
             if resource_exists(ICON_PATH):
-                print(f"Setting window icon from {ICON_PATH}")
+                log.debug(f"Setting window icon from {ICON_PATH}")
                 self.setWindowIcon(QIcon(get_resource_path(ICON_PATH)))
             else:
-                print("No icon found for window")
+                log.warning("No icon found for window")
             
             # Create the central widget
-            print("Creating central widget...")
+            log.debug("Creating central widget...")
             central_widget = QWidget()
             main_layout = QVBoxLayout(central_widget)
             main_layout.setContentsMargins(0, 0, 0, 0)
             main_layout.setSpacing(0)
-            print("Central widget layout created")
+            log.debug("Central widget layout created")
             
             # Create the main content area
-            print("Creating content widget...")
+            log.debug("Creating content widget...")
             content_widget = QWidget()
             content_layout = QHBoxLayout(content_widget)
             content_layout.setContentsMargins(0, 0, 0, 0)
             content_layout.setSpacing(0)
-            print("Content widget created")
+            log.debug("Content widget created")
             
             # Create the main view splitter
-            print("Creating splitter...")
+            log.debug("Creating splitter...")
             self.splitter = QSplitter(Qt.Orientation.Horizontal)
             self.splitter.setHandleWidth(1)
             self.splitter.setChildrenCollapsible(False)
             content_layout.addWidget(self.splitter, 1)  # Give the splitter more space
-            print("Splitter added to layout")
+            log.debug("Splitter added to layout")
             
             # Create the main panel
-            print("Creating main panel...")
+            log.debug("Creating main panel...")
             self.main_panel = self.create_main_panel()
-            print("Main panel created")
+            log.debug("Main panel created")
             self.splitter.addWidget(self.main_panel)
-            print("Main panel added to splitter")
+            log.debug("Main panel added to splitter")
             
             # Set initial sizes for the splitter
             self.splitter.setSizes([220, 780])
-            print("Splitter sizes set")
+            log.debug("Splitter sizes set")
             
             # Add the content widget to the main layout
             main_layout.addWidget(content_widget, 1)
-            print("Content widget added to main layout")
+            log.debug("Content widget added to main layout")
             
             # Set the central widget
             self.setCentralWidget(central_widget)
-            print("Central widget set")
+            log.debug("Central widget set")
             
             # Create the menu bar
-            print("Creating menu bar...")
+            log.debug("Creating menu bar...")
             self.create_menu_bar()
-            print("Menu bar created")
+            log.debug("Menu bar created")
             
             # Create the status bar
-            print("Creating status bar...")
+            log.debug("Creating status bar...")
             self.status_bar = QStatusBar()
             self.setStatusBar(self.status_bar)
             self.status_bar.showMessage("Ready")
             self.status_bar.setFixedHeight(24)
-            print("Status bar created")
+            log.debug("Status bar created")
             
             # Apply Spotify-like dark theme
-            print("Applying theme...")
+            log.debug("Applying theme...")
             self.apply_theme()
-            print("Theme applied")
+            log.debug("Theme applied")
             
             # Restore window geometry from config
-            print("Restoring window state...")
+            log.debug("Restoring window state...")
             self.restore_window_state()
-            print("Window state restored")
-            print("MainWindow.__init__ completed")
+            log.debug("Window state restored")
+            log.info("MainWindow initialization completed")
             
         except Exception as e:
-            import traceback
-            print(f"Error in MainWindow.__init__: {e}")
-            traceback.print_exc()
+            log.critical(f"Error in MainWindow.__init__: {e}")
+            log.critical(traceback.format_exc())
             raise
 
     def _new_file(self):
         """Create a new empty album list."""
+        log.debug("Creating new album list")
         try:
             # Ask confirmation if there are unsaved changes
             if hasattr(self, 'albums') and self.albums:
+                log.debug("Unsaved changes detected, prompting user")
                 result = QMessageBox.question(
                     self,
                     "New Album List",
@@ -309,10 +318,12 @@ class MainWindow(QMainWindow):
                 )
                 
                 if result != QMessageBox.StandardButton.Yes:
+                    log.debug("User cancelled new album list creation")
                     return
             
             # Get collections from repository
             if hasattr(self, 'list_repository') and self.list_repository:
+                log.debug("Getting collections from repository")
                 collections = self.list_repository.get_collections()
                 collection_names = list(collections.keys())
                 
@@ -320,17 +331,21 @@ class MainWindow(QMainWindow):
                 from views.new_list_dialog import show_new_list_dialog
                 
                 # Show the new list dialog with integrated collection selection
+                log.debug("Showing new list dialog")
                 list_info = show_new_list_dialog(collection_names, self)
                 
                 if not list_info:
                     # User canceled
+                    log.debug("User cancelled new list dialog")
                     return
                 
                 # Create the new collection if needed
                 if list_info["is_new_collection"]:
+                    log.info(f"Creating new collection: {list_info['collection_name']}")
                     self.list_repository.create_collection(list_info["collection_name"])
                 
                 # Create a new empty list
+                log.debug("Creating new empty album list")
                 self.albums = []
                 self.model = AlbumTableModel(self.albums)
                 self.table_view.setModel(self.model)
@@ -355,18 +370,19 @@ class MainWindow(QMainWindow):
                 
                 # Update status bar
                 self.status_bar.showMessage(f"Created new album list in collection: {list_info['collection_name']}")
+                log.info(f"Created new album list: {list_info['title']} in collection: {list_info['collection_name']}")
                 
                 # Save the empty list to repository - passing True to allow empty list
                 self.save_to_repository(allow_empty=True)
                 
                 # Add to the selected collection
                 if self.current_file_path:
+                    log.debug(f"Adding list to collection: {list_info['collection_name']}")
                     self.list_repository.add_to_collection(self.current_file_path, list_info["collection_name"])
 
         except Exception as e:
-            import traceback
-            print(f"Error creating new file: {e}")
-            traceback.print_exc()
+            log.error(f"Error creating new file: {e}")
+            log.debug(traceback.format_exc())
             QMessageBox.critical(
                 self,
                 "Error",
@@ -375,6 +391,7 @@ class MainWindow(QMainWindow):
 
     def _import_list(self):
         """Import an album list from a file."""
+        log.debug("Importing album list")
         try:
             # Get file path from dialog
             file_path, _ = QFileDialog.getOpenFileName(
@@ -385,11 +402,13 @@ class MainWindow(QMainWindow):
             )
             
             if not file_path:
+                log.debug("User cancelled file selection")
                 return
                     
             # Import the file into the repository
             if hasattr(self, 'list_repository') and self.list_repository:
                 # Get collections from repository
+                log.debug("Getting collections for import")
                 collections = self.list_repository.get_collections()
                 collection_names = list(collections.keys())
                 
@@ -397,6 +416,7 @@ class MainWindow(QMainWindow):
                 from views.collection_selection_dialog import select_collection
                 
                 # Show the collection selection dialog
+                log.debug("Showing collection selection dialog")
                 collection_name, is_new, ok = select_collection(
                     collection_names,
                     self,
@@ -406,16 +426,20 @@ class MainWindow(QMainWindow):
                 
                 if not ok:
                     # User canceled
+                    log.debug("User cancelled collection selection")
                     return
                 
                 # Create the new collection if needed
                 if is_new:
+                    log.info(f"Creating new collection for import: {collection_name}")
                     self.list_repository.create_collection(collection_name)
                     
                 # Import the file
+                log.info(f"Importing file: {file_path}")
                 imported_path = self.list_repository.import_external_list(file_path)
                 if imported_path:
                     # Add to the selected collection
+                    log.debug(f"Adding imported list to collection: {collection_name}")
                     self.list_repository.add_to_collection(imported_path, collection_name)
                     
                     # Open the imported list
@@ -426,14 +450,15 @@ class MainWindow(QMainWindow):
                         self.list_metadata["collection"] = collection_name
                     
                     self.status_bar.showMessage(f"Imported list from {file_path} to collection: {collection_name}")
+                    log.info(f"Successfully imported list from {file_path} to collection: {collection_name}")
             else:
                 # Fallback to old import method
+                log.warning("No repository available, using direct file import")
                 self.open_album_list(file_path)
                     
         except Exception as e:
-            import traceback
-            print(f"Error importing list: {e}")
-            traceback.print_exc()
+            log.error(f"Error importing list: {e}")
+            log.debug(traceback.format_exc())
             QMessageBox.critical(
                 self,
                 "Import Error",
@@ -444,9 +469,11 @@ class MainWindow(QMainWindow):
         """
         Export the current album list to a file.
         """
+        log.debug("Exporting album list")
         try:
             # Check if there are albums to export
             if not hasattr(self, 'albums') or not self.albums:
+                log.warning("No albums to export")
                 QMessageBox.warning(
                     self,
                     "Export Warning",
@@ -456,6 +483,7 @@ class MainWindow(QMainWindow):
             
             # Create metadata if it doesn't exist
             if not hasattr(self, 'list_metadata'):
+                log.debug("Creating default metadata for export")
                 self.list_metadata = {
                     "title": "My Album List",
                     "description": "Album list created with SuShe NG"
@@ -471,12 +499,14 @@ class MainWindow(QMainWindow):
             
             if not file_path:
                 # User canceled
+                log.debug("User cancelled export dialog")
                 return
             
             # Create a list manager
             list_manager = AlbumListManager()
             
             # Export the list
+            log.info(f"Exporting {len(self.albums)} albums to {file_path}")
             list_manager.export_to_new_format(
                 self.albums,
                 self.list_metadata,
@@ -488,11 +518,14 @@ class MainWindow(QMainWindow):
             
             # Add to recent files
             if hasattr(self, 'config') and self.config:
+                log.debug("Adding exported file to recent files")
                 self.config.add_recent_file(file_path)
                 self._update_recent_files_menu()
             
         except Exception as e:
             # Show error message
+            log.error(f"Error exporting list: {e}")
+            log.debug(traceback.format_exc())
             QMessageBox.critical(
                 self,
                 "Export Error",
@@ -504,6 +537,7 @@ class MainWindow(QMainWindow):
         """
         Open an album list from a file.
         """
+        log.debug("Opening album list file")
         file_path, _ = QFileDialog.getOpenFileName(
             self,
             "Open Album List",
@@ -512,7 +546,10 @@ class MainWindow(QMainWindow):
         )
         
         if file_path:
+            log.info(f"Selected file to open: {file_path}")
             self.open_album_list(file_path)
+        else:
+            log.debug("User cancelled file selection")
 
 
     def open_album_list(self, file_path):
@@ -522,22 +559,28 @@ class MainWindow(QMainWindow):
         Args:
             file_path: Path to the album list file
         """
+        log.debug(f"Opening album list from: {file_path}")
         try:
             # Load the list from the repository or directly from the file
             if hasattr(self, 'list_repository') and self.list_repository:
+                log.debug("Loading list from repository")
                 albums, metadata = self.list_repository.load_list(file_path)
             else:
                 # Fallback to direct loading for backward compatibility
+                log.debug("No repository available, using direct file loading")
                 if file_path.endswith('.json'):
                     # Old format
+                    log.debug("Loading old format JSON file")
                     list_manager = AlbumListManager()
                     albums, metadata = list_manager.import_from_old_format(file_path)
                 elif file_path.endswith('.sush'):
                     # New format
+                    log.debug("Loading new format SUSH file")
                     list_manager = AlbumListManager()
                     albums, metadata = list_manager.import_from_new_format(file_path)
                 else:
                     # Unknown format
+                    log.warning(f"Unsupported file format: {file_path}")
                     QMessageBox.warning(
                         self,
                         "Unknown File Format",
@@ -567,9 +610,12 @@ class MainWindow(QMainWindow):
             
             # Update the status bar
             self.status_bar.showMessage(f"Opened {len(albums)} albums from {file_path}")
+            log.info(f"Successfully opened {len(albums)} albums from {file_path}")
             
         except Exception as e:
             # Show error message
+            log.error(f"Error opening file {file_path}: {e}")
+            log.debug(traceback.format_exc())
             QMessageBox.critical(
                 self,
                 "Open Error",
@@ -577,19 +623,21 @@ class MainWindow(QMainWindow):
             )
 
 
-
     def _save_file(self):
         """
         Save the current album list to a file.
         """
+        log.debug("Saving album list")
         # Check if we have a current file path
         current_file = getattr(self, 'current_file_path', None)
         
         if current_file:
             # Save to the current file
+            log.debug(f"Saving to existing file: {current_file}")
             self._do_save_file(current_file)
         else:
             # No current file, use Save As
+            log.debug("No current file, using Save As")
             self._save_file_as()
 
 
@@ -597,8 +645,10 @@ class MainWindow(QMainWindow):
         """
         Save the current album list to a new file.
         """
+        log.debug("Saving album list as new file")
         # Check if there are albums to save
         if not hasattr(self, 'albums') or not self.albums:
+            log.warning("No albums to save")
             QMessageBox.warning(
                 self,
                 "Save Warning",
@@ -608,6 +658,7 @@ class MainWindow(QMainWindow):
         
         # Create metadata if it doesn't exist
         if not hasattr(self, 'list_metadata'):
+            log.debug("Creating default metadata for save")
             self.list_metadata = {
                 "title": "My Album List",
                 "description": "Album list created with SuShe NG"
@@ -621,7 +672,10 @@ class MainWindow(QMainWindow):
         )
         
         if file_path:
+            log.info(f"Selected file for save: {file_path}")
             self._do_save_file(file_path)
+        else:
+            log.debug("User cancelled save dialog")
 
 
     def _do_save_file(self, file_path):
@@ -631,12 +685,14 @@ class MainWindow(QMainWindow):
         Args:
             file_path: Path to save the file
         """
+        log.debug(f"Saving to file: {file_path}")
         try:
             # Create a list manager
             list_manager = AlbumListManager()
             
             # Create metadata if it doesn't exist
             if not hasattr(self, 'list_metadata'):
+                log.debug("Creating default metadata for save")
                 self.list_metadata = {
                     "title": "My Album List",
                     "description": "Album list created with SuShe NG",
@@ -663,9 +719,11 @@ class MainWindow(QMainWindow):
             
             # Update the status bar
             self.status_bar.showMessage(f"Saved {len(self.albums)} albums to {file_path}")
+            log.info(f"Successfully saved {len(self.albums)} albums to {file_path}")
             
             # Add to recent files
             if hasattr(self, 'config') and self.config:
+                log.debug("Adding saved file to recent files")
                 self.config.add_recent_file(file_path)
                 
                 # Update the recent files menu
@@ -673,6 +731,8 @@ class MainWindow(QMainWindow):
                 
         except Exception as e:
             # Show error message
+            log.error(f"Error saving to {file_path}: {e}")
+            log.debug(traceback.format_exc())
             QMessageBox.critical(
                 self,
                 "Save Error",
@@ -684,7 +744,9 @@ class MainWindow(QMainWindow):
         """
         Update the recent files menu.
         """
+        log.debug("Updating recent files menu")
         if not hasattr(self, 'recent_files_menu'):
+            log.warning("Recent files menu not found")
             return
         
         # Clear the menu
@@ -697,11 +759,13 @@ class MainWindow(QMainWindow):
         
         if not recent_files:
             # Add a disabled "No recent files" action
+            log.debug("No recent files found")
             action = QAction("No recent files", self)
             action.setEnabled(False)
             self.recent_files_menu.addAction(action)
         else:
             # Add actions for each recent file
+            log.debug(f"Adding {len(recent_files)} recent files to menu")
             for file_path in recent_files:
                 file_name = os.path.basename(file_path)
                 action = QAction(file_name, self)
@@ -724,10 +788,12 @@ class MainWindow(QMainWindow):
         Args:
             event: The close event
         """
+        log.debug("Close event received")
         # Check for unsaved changes
         # This is a simple implementation - you might want to add more sophisticated change tracking
         if hasattr(self, 'albums') and self.albums and not hasattr(self, 'current_file_path'):
             # Unsaved changes
+            log.info("Unsaved changes detected, prompting user")
             result = QMessageBox.question(
                 self,
                 "Unsaved Changes",
@@ -737,29 +803,36 @@ class MainWindow(QMainWindow):
             )
             
             if result == QMessageBox.StandardButton.Save:
+                log.debug("User chose to save before closing")
                 self._save_file()
                 # Check if save was successful
                 if not hasattr(self, 'current_file_path'):
                     # Save was canceled or failed
+                    log.debug("Save was cancelled or failed, ignoring close event")
                     event.ignore()
                     return
             elif result == QMessageBox.StandardButton.Cancel:
+                log.debug("User cancelled close operation")
                 event.ignore()
                 return
         
         # Save window state before closing
+        log.debug("Saving window state before closing")
         self.save_window_state()
         
         # Accept the close event
+        log.info("Application closing")
         event.accept()
 
     def _clear_recent_files(self):
         """
         Clear the recent files list.
         """
+        log.debug("Clearing recent files list")
         if hasattr(self, 'config') and self.config:
             self.config.set("recent_files", [])
             self._update_recent_files_menu()
+            log.info("Recent files list cleared")
 
     def save_to_repository(self, existing_path: str = None, allow_empty: bool = False) -> None:
         """
@@ -769,9 +842,11 @@ class MainWindow(QMainWindow):
             existing_path: Path to existing file (optional)
             allow_empty: Whether to allow saving empty lists (for new list creation)
         """
+        log.debug("Saving to repository")
         try:
             # Make sure we have albums and metadata, but allow empty albums if specified
             if not hasattr(self, 'albums') or (not self.albums and not allow_empty):
+                log.warning("No albums to save and empty lists not allowed")
                 QMessageBox.warning(
                     self,
                     "Save Warning",
@@ -781,6 +856,7 @@ class MainWindow(QMainWindow):
             
             # Create metadata if it doesn't exist
             if not hasattr(self, 'list_metadata'):
+                log.debug("Creating default metadata for repository save")
                 self.list_metadata = {
                     "title": "My Album List",
                     "description": "Album list created with SuShe NG",
@@ -795,21 +871,26 @@ class MainWindow(QMainWindow):
             file_name = None
             if existing_path:
                 file_name = os.path.basename(existing_path)
+                log.debug(f"Using existing filename: {file_name}")
             
             # Save to the repository
+            log.debug(f"Saving {len(self.albums)} albums to repository")
             file_path = self.list_repository.save_list(
                 self.albums, self.list_metadata, file_name)
             
             # Store the current file path
             self.current_file_path = file_path
+            log.debug(f"Saved to: {file_path}")
             
             # Check if this list is in a collection, and add it if not
             if "collection" in self.list_metadata:
                 # Add to the specified collection
                 collection_name = self.list_metadata["collection"]
+                log.debug(f"Adding to specified collection: {collection_name}")
                 self.list_repository.add_to_collection(file_path, collection_name)
             else:
                 # No collection specified, check if it's in any collection
+                log.debug("No collection specified, checking existing collections")
                 collections = self.list_repository.get_collections()
                 found_in_collection = False
                 
@@ -819,12 +900,14 @@ class MainWindow(QMainWindow):
                             found_in_collection = True
                             # Store the collection info for future saves
                             self.list_metadata["collection"] = collection_name
+                            log.debug(f"List found in collection: {collection_name}")
                             break
                     if found_in_collection:
                         break
                         
                 if not found_in_collection:
                     # Not in any collection, ask user to select one
+                    log.info("List not in any collection, prompting user")
                     collection_names = list(collections.keys())
                     
                     # Import the collection selection dialog
@@ -842,12 +925,15 @@ class MainWindow(QMainWindow):
                         # Default to creating a new collection based on the list name
                         collection_name = f"{self.list_metadata.get('title', 'My')} Collection"
                         is_new = True
+                        log.debug(f"User cancelled, creating default collection: {collection_name}")
                     
                     # Create the new collection if needed
                     if is_new:
+                        log.info(f"Creating new collection: {collection_name}")
                         self.list_repository.create_collection(collection_name)
                     
                     # Add to the selected collection
+                    log.debug(f"Adding list to collection: {collection_name}")
                     self.list_repository.add_to_collection(file_path, collection_name)
                     # Store for future saves
                     self.list_metadata["collection"] = collection_name
@@ -860,12 +946,13 @@ class MainWindow(QMainWindow):
             collection_name = self.list_metadata.get("collection", "")
             if collection_name:
                 self.status_bar.showMessage(f"Saved {len(self.albums)} albums to collection: {collection_name}")
+                log.info(f"Successfully saved {len(self.albums)} albums to collection: {collection_name}")
             else:
                 self.status_bar.showMessage(f"Saved {len(self.albums)} albums to repository")
+                log.info(f"Successfully saved {len(self.albums)} albums to repository")
         except Exception as e:
-            import traceback
-            print(f"Error saving to repository: {e}")
-            traceback.print_exc()
+            log.error(f"Error saving to repository: {e}")
+            log.debug(traceback.format_exc())
             # Show error message
             QMessageBox.critical(
                 self,
@@ -876,6 +963,7 @@ class MainWindow(QMainWindow):
     
     def create_main_panel(self) -> QWidget:
         """Create the main content panel with header and album table."""
+        log.debug("Creating main panel")
         try:
             panel = QWidget()
             layout = QVBoxLayout(panel)
@@ -966,6 +1054,7 @@ class MainWindow(QMainWindow):
             
             # Create and set up the table view - CHANGE THE ORDER OF OPERATIONS
             self.table_view = QTableView()
+            log.debug("Creating table view")
             
             # Basic setup that doesn't depend on model
             self.table_view.setDragEnabled(True)
@@ -983,10 +1072,12 @@ class MainWindow(QMainWindow):
             self.albums = []
             
             # Create the model
+            log.debug("Creating table model")
             self.model = AlbumTableModel(self.albums)
             self.table_view.setModel(self.model)
             
             # Now set properties that require a model to be set first
+            log.debug("Creating table delegate")
             self.table_view.setItemDelegate(AlbumTableDelegate())
             
             # Style the headers
@@ -1035,6 +1126,7 @@ class MainWindow(QMainWindow):
             self.setup_enhanced_drag_drop()
             
             # Create list metadata for the empty list
+            log.debug("Creating default list metadata")
             self.list_metadata = {
                 "title": "Untitled List",
                 "description": "New album list",
@@ -1044,9 +1136,8 @@ class MainWindow(QMainWindow):
                 
             return panel
         except Exception as e:
-            import traceback
-            print(f"Error in create_main_panel: {e}")
-            traceback.print_exc()
+            log.critical(f"Error in create_main_panel: {e}")
+            log.critical(traceback.format_exc())
             raise
 
     def highlight_row(self, row_index):
@@ -1056,6 +1147,7 @@ class MainWindow(QMainWindow):
         Args:
             row_index: Index of row to highlight
         """
+        log.debug(f"Highlighting row: {row_index}")
         from PyQt6.QtCore import QTimer, QPropertyAnimation, QEasingCurve, QAbstractAnimation
         
         # Get the index for the row
@@ -1081,9 +1173,11 @@ class MainWindow(QMainWindow):
             top_left: Top-left index of the changed data
             bottom_right: Bottom-right index of the changed data
         """
+        log.debug("Model data changed")
         # Flash a subtle highlight on the rows that were affected by a drag and drop
         if hasattr(self.model, 'last_drag_target') and self.model.last_drag_target >= 0:
             target_row = self.model.last_drag_target
+            log.debug(f"Drag operation detected, highlighting target row: {target_row}")
             
             # Create a temporary style for the target row to highlight it
             self.highlight_row(target_row)
@@ -1094,6 +1188,7 @@ class MainWindow(QMainWindow):
 
     def setup_enhanced_drag_drop(self):
         """Set up enhanced drag and drop functionality for the album table."""
+        log.debug("Setting up enhanced drag and drop")
         from views.enhanced_drag_drop import apply_drag_drop_enhancements
         
         # Apply the enhancements to our components
@@ -1140,6 +1235,7 @@ class MainWindow(QMainWindow):
     
     def create_menu_bar(self) -> None:
         """Create the application menu bar with standard file options."""
+        log.debug("Creating menu bar")
         menu_bar = self.menuBar()
         
         # File menu
@@ -1211,10 +1307,12 @@ class MainWindow(QMainWindow):
     
     def toggle_status_bar(self):
         """Toggle the visibility of the status bar."""
+        log.debug("Toggling status bar visibility")
         self.status_bar.setVisible(not self.status_bar.isVisible())
     
     def apply_theme(self) -> None:
         """Apply the Spotify-like theme to the window and its components."""
+        log.debug("Applying Spotify theme")
         # Use the updated Spotify theme
         SpotifyTheme.apply_to_window(self)
         
@@ -1296,6 +1394,7 @@ class MainWindow(QMainWindow):
 
     def restore_window_state(self) -> None:
         """Restore window size and position from saved configuration."""
+        log.debug("Restoring window state")
         # Get saved window geometry
         width = self.config.get("window/width", self.config.get_default("window/width"))
         height = self.config.get("window/height", self.config.get_default("window/height"))
@@ -1305,28 +1404,36 @@ class MainWindow(QMainWindow):
         
         # Set window size
         if width and height:
+            log.debug(f"Restoring window size: {width}x{height}")
             self.resize(width, height)
         
         # Set window position if it was saved
         if pos_x is not None and pos_y is not None:
+            log.debug(f"Restoring window position: ({pos_x}, {pos_y})")
             self.move(pos_x, pos_y)
         
         # Maximize window if it was maximized
         if maximized:
+            log.debug("Restoring maximized state")
             self.setWindowState(Qt.WindowState.WindowMaximized)
     
     def save_window_state(self) -> None:
         """Save window size and position to configuration."""
+        log.debug("Saving window state")
         # Only save if we have a config manager
         if not self.config:
+            log.warning("No config manager available, skipping window state save")
             return
         
         # Save maximized state
         is_maximized = self.windowState() & Qt.WindowState.WindowMaximized
         self.config.set("window/maximized", bool(is_maximized))
+        log.debug(f"Saved maximized state: {bool(is_maximized)}")
         
         # Only save size and position if not maximized
         if not is_maximized:
+            log.debug(f"Saved window size: {self.width()}x{self.height()}")
+            log.debug(f"Saved window position: ({self.x()}, {self.y()})")
             self.config.set("window/width", self.width())
             self.config.set("window/height", self.height())
             self.config.set("window/position_x", self.x())

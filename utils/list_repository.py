@@ -15,6 +15,10 @@ from typing import List, Dict, Any, Optional, Tuple
 
 from utils.album_list_manager import AlbumListManager
 from models.album import Album
+from utils.logging_utils import get_module_logger
+
+# Get module logger
+log = get_module_logger()
 
 
 class ListRepository:
@@ -22,6 +26,8 @@ class ListRepository:
     
     def __init__(self):
         """Initialize the list repository."""
+        log.debug("Initializing ListRepository")
+        
         # Set up the repository base directory
         self.base_dir = self._get_base_directory()
         
@@ -38,6 +44,7 @@ class ListRepository:
         
         # Ensure we have at least one default collection
         if not self.metadata.get('collections', {}):
+            log.info("No collections found, creating default 'My Collection'")
             self.metadata['collections'] = {
                 "My Collection": []  # Create a default empty collection
             }
@@ -47,11 +54,11 @@ class ListRepository:
         self.list_manager = AlbumListManager()
         
         # Log repository info for debugging
-        print(f"Repository initialized at: {self.base_dir}")
-        print(f"Lists directory: {self.lists_dir}")
-        print(f"Collections directory: {self.collections_dir}")
-        print(f"Loaded metadata with {len(self.metadata.get('collections', {}))} collections")
-        print(f"Available collections: {list(self.metadata.get('collections', {}).keys())}")
+        log.info(f"Repository initialized at: {self.base_dir}")
+        log.debug(f"Lists directory: {self.lists_dir}")
+        log.debug(f"Collections directory: {self.collections_dir}")
+        log.debug(f"Loaded metadata with {len(self.metadata.get('collections', {}))} collections")
+        log.debug(f"Available collections: {list(self.metadata.get('collections', {}).keys())}")
     
     def _get_base_directory(self) -> str:
         """
@@ -64,12 +71,15 @@ class ListRepository:
         if platform.system() == "Windows":
             # Windows: %APPDATA%\SusheNG
             base = os.path.join(os.environ["APPDATA"], "SusheNG")
+            log.debug(f"Using Windows app data directory: {base}")
         elif platform.system() == "Darwin":
             # macOS: ~/Library/Application Support/SusheNG
             base = os.path.join(os.path.expanduser("~"), "Library", "Application Support", "SusheNG")
+            log.debug(f"Using macOS app data directory: {base}")
         else:
             # Linux/Unix: ~/.local/share/SusheNG
             base = os.path.join(os.path.expanduser("~"), ".local", "share", "SusheNG")
+            log.debug(f"Using Linux app data directory: {base}")
         
         # Create the base directory if it doesn't exist
         os.makedirs(base, exist_ok=True)
@@ -85,11 +95,14 @@ class ListRepository:
         """
         if os.path.exists(self.metadata_file):
             try:
+                log.debug(f"Loading metadata from {self.metadata_file}")
                 with open(self.metadata_file, "r", encoding="utf-8") as f:
                     return json.load(f)
             except Exception as e:
-                print(f"Error loading metadata: {e}")
-                traceback.print_exc()
+                log.error(f"Error loading metadata: {e}")
+                log.debug(traceback.format_exc())
+        else:
+            log.info(f"Metadata file not found, creating new at: {self.metadata_file}")
         
         # Initialize with default metadata
         return {
@@ -109,14 +122,15 @@ class ListRepository:
             metadata_dir = os.path.dirname(self.metadata_file)
             os.makedirs(metadata_dir, exist_ok=True)
             
+            log.debug(f"Saving metadata to {self.metadata_file}")
             with open(self.metadata_file, "w", encoding="utf-8") as f:
                 json.dump(self.metadata, f, indent=2)
                 
             # Log that we saved the metadata for debugging
-            print(f"Saved metadata: {len(self.metadata.get('collections', {}))} collections")
+            log.debug(f"Saved metadata: {len(self.metadata.get('collections', {}))} collections")
         except Exception as e:
-            print(f"Error saving metadata: {e}")
-            traceback.print_exc()
+            log.error(f"Error saving metadata: {e}")
+            log.debug(traceback.format_exc())
     
     def get_all_lists(self) -> List[Dict[str, Any]]:
         """
@@ -125,6 +139,7 @@ class ListRepository:
         Returns:
             A list of dictionaries with list information
         """
+        log.debug("Getting all lists from repository")
         lists = []
         
         # Get files with .sush extension
@@ -136,7 +151,9 @@ class ListRepository:
                     lists.append(list_info)
         
         # Sort by last modified date (newest first)
-        return sorted(lists, key=lambda x: x.get("last_modified", ""), reverse=True)
+        sorted_lists = sorted(lists, key=lambda x: x.get("last_modified", ""), reverse=True)
+        log.debug(f"Found {len(sorted_lists)} lists")
+        return sorted_lists
     
     def get_recent_lists(self, limit: int = 5) -> List[Dict[str, Any]]:
         """
@@ -148,6 +165,7 @@ class ListRepository:
         Returns:
             A list of dictionaries with list information
         """
+        log.debug(f"Getting recent lists (limit: {limit})")
         recent_paths = self.metadata.get("recent_lists", [])[:limit]
         
         # Get info for each list
@@ -157,7 +175,10 @@ class ListRepository:
                 list_info = self._get_list_info(path)
                 if list_info:
                     recent_lists.append(list_info)
+            else:
+                log.warning(f"Recent list not found: {path}")
         
+        log.debug(f"Returning {len(recent_lists)} recent lists")
         return recent_lists
     
     def get_favorite_lists(self) -> List[Dict[str, Any]]:
@@ -167,6 +188,7 @@ class ListRepository:
         Returns:
             A list of dictionaries with list information
         """
+        log.debug("Getting favorite lists")
         favorite_paths = self.metadata.get("favorite_lists", [])
         
         # Get info for each list
@@ -176,11 +198,12 @@ class ListRepository:
                 list_info = self._get_list_info(path)
                 if list_info:
                     favorite_lists.append(list_info)
+            else:
+                log.warning(f"Favorite list not found: {path}")
         
+        log.debug(f"Returning {len(favorite_lists)} favorite lists")
         return favorite_lists
     
-
-
     def get_collections(self) -> Dict[str, List[Dict[str, Any]]]:
         """
         Get all collections and their lists.
@@ -188,23 +211,26 @@ class ListRepository:
         Returns:
             A dictionary mapping collection names to lists of list information
         """
+        log.debug("Getting all collections")
         collections = {}
         
         # Ensure metadata has a collections entry
         if 'collections' not in self.metadata:
+            log.warning("No collections key in metadata, creating it")
             self.metadata['collections'] = {}
             self._save_metadata()
         
         # Create a default collection if none exist
         if not self.metadata['collections']:
+            log.info("No collections found, creating default 'My Collection'")
             self.metadata['collections'] = {"My Collection": []}
             self._save_metadata()
-            print("Created default 'My Collection' as no collections existed")
         
         # Debug print
-        print(f"Getting collections from metadata: {list(self.metadata.get('collections', {}).keys())}")
+        log.debug(f"Collections in metadata: {list(self.metadata.get('collections', {}).keys())}")
         
         for collection_name, list_paths in self.metadata.get("collections", {}).items():
+            log.debug(f"Processing collection: {collection_name} with {len(list_paths)} lists")
             collection_lists = []
             
             for path in list_paths:
@@ -212,9 +238,12 @@ class ListRepository:
                     list_info = self._get_list_info(path)
                     if list_info:
                         collection_lists.append(list_info)
+                else:
+                    log.warning(f"List not found in collection {collection_name}: {path}")
             
             # Always include the collection, even if it has no lists
             collections[collection_name] = collection_lists
+            log.debug(f"Collection {collection_name} has {len(collection_lists)} valid lists")
         
         return collections
     
@@ -229,6 +258,7 @@ class ListRepository:
             A dictionary with list information or None if the file cannot be read
         """
         try:
+            log.debug(f"Getting list info for: {file_path}")
             with open(file_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
             
@@ -242,7 +272,7 @@ class ListRepository:
             # Check if it's a favorite
             is_favorite = file_path in self.metadata.get("favorite_lists", [])
             
-            return {
+            list_info = {
                 "file_path": file_path,
                 "file_name": os.path.basename(file_path),
                 "title": metadata.get("title", "Untitled List"),
@@ -253,8 +283,11 @@ class ListRepository:
                 "last_modified": modified_time,
                 "is_favorite": is_favorite
             }
+            log.debug(f"Retrieved info for list: {list_info['title']}")
+            return list_info
         except Exception as e:
-            print(f"Error reading list file {file_path}: {e}")
+            log.error(f"Error reading list file {file_path}: {e}")
+            log.debug(traceback.format_exc())
             return None
     
     def add_list_to_recent(self, file_path: str) -> None:
@@ -264,10 +297,12 @@ class ListRepository:
         Args:
             file_path: Path to the list file
         """
+        log.debug(f"Adding list to recent: {file_path}")
         recent_lists = self.metadata.get("recent_lists", [])
         
         # Remove the file if it's already in the list
         if file_path in recent_lists:
+            log.debug("List already in recent, moving to top")
             recent_lists.remove(file_path)
         
         # Add to the beginning of the list
@@ -278,6 +313,7 @@ class ListRepository:
         
         # Save the metadata
         self._save_metadata()
+        log.debug("List added to recent")
     
     def toggle_favorite(self, file_path: str) -> bool:
         """
@@ -289,20 +325,24 @@ class ListRepository:
         Returns:
             True if the list is now a favorite, False otherwise
         """
+        log.debug(f"Toggling favorite status for: {file_path}")
         favorite_lists = self.metadata.get("favorite_lists", [])
         
         if file_path in favorite_lists:
             # Remove from favorites
+            log.debug("Removing from favorites")
             favorite_lists.remove(file_path)
             is_favorite = False
         else:
             # Add to favorites
+            log.debug("Adding to favorites")
             favorite_lists.append(file_path)
             is_favorite = True
         
         self.metadata["favorite_lists"] = favorite_lists
         self._save_metadata()
         
+        log.info(f"List favorite status toggled: {is_favorite}")
         return is_favorite
     
     def add_to_collection(self, file_path: str, collection_name: str) -> None:
@@ -313,18 +353,24 @@ class ListRepository:
             file_path: Path to the list file
             collection_name: Name of the collection
         """
+        log.debug(f"Adding list {file_path} to collection: {collection_name}")
         collections = self.metadata.get("collections", {})
         
         # Create the collection if it doesn't exist
         if collection_name not in collections:
+            log.info(f"Collection '{collection_name}' doesn't exist, creating it")
             collections[collection_name] = []
         
         # Add the file to the collection if it's not already there
         if file_path not in collections[collection_name]:
+            log.debug(f"Adding {file_path} to collection {collection_name}")
             collections[collection_name].append(file_path)
+        else:
+            log.debug(f"File {file_path} already in collection {collection_name}")
         
         self.metadata["collections"] = collections
         self._save_metadata()
+        log.info(f"List added to collection: {collection_name}")
     
     def remove_from_collection(self, file_path: str, collection_name: str) -> None:
         """
@@ -334,17 +380,23 @@ class ListRepository:
             file_path: Path to the list file
             collection_name: Name of the collection
         """
+        log.debug(f"Removing list {file_path} from collection: {collection_name}")
         collections = self.metadata.get("collections", {})
         
         if collection_name in collections and file_path in collections[collection_name]:
+            log.debug(f"Removing file from collection")
             collections[collection_name].remove(file_path)
             
             # Remove the collection if it's empty
             if not collections[collection_name]:
+                log.info(f"Collection {collection_name} is now empty, removing it")
                 del collections[collection_name]
             
             self.metadata["collections"] = collections
             self._save_metadata()
+            log.info(f"List removed from collection: {collection_name}")
+        else:
+            log.warning(f"List not found in collection: {collection_name}")
     
     def create_collection(self, collection_name: str) -> None:
         """
@@ -355,7 +407,7 @@ class ListRepository:
         """
         # Sanity check the name
         if not collection_name.strip():
-            print("Error: Cannot create collection with empty name")
+            log.error("Cannot create collection with empty name")
             return
             
         # Get existing collections or initialize empty dict
@@ -363,7 +415,7 @@ class ListRepository:
         
         # Check if collection exists
         if collection_name in collections:
-            print(f"Collection {collection_name} already exists, skipping creation")
+            log.warning(f"Collection {collection_name} already exists, skipping creation")
             return
             
         # Create the collection directory
@@ -375,7 +427,7 @@ class ListRepository:
         self.metadata["collections"] = collections
         
         # Save the metadata
-        print(f"Creating new collection: {collection_name}")
+        log.info(f"Creating new collection: {collection_name}")
         self._save_metadata()
     
     def rename_collection(self, old_name: str, new_name: str) -> bool:
@@ -391,11 +443,13 @@ class ListRepository:
         """
         # Sanity check the names
         if not old_name.strip() or not new_name.strip():
+            log.error("Cannot rename with empty name")
             return False
             
         collections = self.metadata.get("collections", {})
         
         if old_name in collections and new_name not in collections:
+            log.info(f"Renaming collection: {old_name} -> {new_name}")
             # Rename the collection in metadata
             collections[new_name] = collections[old_name]
             del collections[old_name]
@@ -407,16 +461,23 @@ class ListRepository:
             # Only try to rename if the old directory exists
             if os.path.exists(old_dir):
                 try:
+                    log.debug(f"Renaming directory: {old_dir} -> {new_dir}")
                     os.rename(old_dir, new_dir)
                 except Exception as e:
-                    print(f"Error renaming collection directory: {e}")
+                    log.error(f"Error renaming collection directory: {e}")
+                    log.debug(traceback.format_exc())
                     # Continue anyway since the metadata is more important
             
             self.metadata["collections"] = collections
             self._save_metadata()
+            log.info(f"Collection renamed successfully")
             return True
-        
-        return False
+        else:
+            if new_name in collections:
+                log.error(f"Cannot rename: target collection {new_name} already exists")
+            else:
+                log.error(f"Cannot rename: source collection {old_name} not found")
+            return False
     
     def delete_collection(self, collection_name: str) -> bool:
         """
@@ -428,6 +489,7 @@ class ListRepository:
         Returns:
             True if successful, False otherwise
         """
+        log.info(f"Deleting collection: {collection_name}")
         collections = self.metadata.get("collections", {})
         
         if collection_name in collections:
@@ -438,15 +500,19 @@ class ListRepository:
             collection_dir = os.path.join(self.collections_dir, collection_name)
             if os.path.exists(collection_dir):
                 try:
+                    log.debug(f"Removing collection directory: {collection_dir}")
                     shutil.rmtree(collection_dir)
                 except Exception as e:
-                    print(f"Error removing collection directory: {e}")
+                    log.error(f"Error removing collection directory: {e}")
+                    log.debug(traceback.format_exc())
                     # Continue anyway since the metadata is more important
             
             self.metadata["collections"] = collections
             self._save_metadata()
+            log.info(f"Collection deleted successfully")
             return True
         
+        log.warning(f"Collection not found: {collection_name}")
         return False
     
     def save_list(self, albums: List[Album], metadata: Dict[str, Any], 
@@ -462,12 +528,15 @@ class ListRepository:
         Returns:
             The path to the saved file
         """
+        log.debug(f"Saving list to repository, albums: {len(albums)}")
         # Generate a file name if not provided
         if not file_name:
             file_name = metadata.get("title", "Untitled List")
+            log.debug(f"Generated filename from title: {file_name}")
             
         # Sanitize the file name
         file_name = self._sanitize_filename(file_name)
+        log.debug(f"Sanitized filename: {file_name}")
         
         # Ensure it has the .sush extension
         if not file_name.endswith(".sush"):
@@ -475,9 +544,11 @@ class ListRepository:
         
         # Create the full file path
         file_path = os.path.join(self.lists_dir, file_name)
+        log.debug(f"Full file path: {file_path}")
         
         # Export the list
         self.list_manager.export_to_new_format(albums, metadata, file_path)
+        log.info(f"List exported to: {file_path}")
         
         # Add to recent lists
         self.add_list_to_recent(file_path)
@@ -494,16 +565,23 @@ class ListRepository:
         Returns:
             Tuple of (list of Albums, metadata)
         """
+        log.debug(f"Loading list from: {file_path}")
         # Add to recent lists
         self.add_list_to_recent(file_path)
         
         # Check if it's a .sush file
         if file_path.endswith(".sush"):
-            return self.list_manager.import_from_new_format(file_path)
+            log.debug("Loading as SUSH format")
+            albums, metadata = self.list_manager.import_from_new_format(file_path)
         elif file_path.endswith(".json"):
-            return self.list_manager.import_from_old_format(file_path)
+            log.debug("Loading as JSON format")
+            albums, metadata = self.list_manager.import_from_old_format(file_path)
         else:
+            log.error(f"Unsupported file format: {file_path}")
             raise ValueError(f"Unsupported file format: {file_path}")
+        
+        log.info(f"Loaded {len(albums)} albums from {file_path}")
+        return albums, metadata
     
     def delete_list(self, file_path: str) -> bool:
         """
@@ -515,39 +593,47 @@ class ListRepository:
         Returns:
             True if successful, False otherwise
         """
+        log.info(f"Deleting list: {file_path}")
         try:
             # Check if the file exists
             if not os.path.exists(file_path):
+                log.warning(f"File not found: {file_path}")
                 return False
             
             # Remove from recent lists
             if file_path in self.metadata.get("recent_lists", []):
+                log.debug("Removing from recent lists")
                 self.metadata["recent_lists"].remove(file_path)
             
             # Remove from favorites
             if file_path in self.metadata.get("favorite_lists", []):
+                log.debug("Removing from favorites")
                 self.metadata["favorite_lists"].remove(file_path)
             
             # Remove from collections
             collections = self.metadata.get("collections", {})
             for collection, files in list(collections.items()):
                 if file_path in files:
+                    log.debug(f"Removing from collection: {collection}")
                     files.remove(file_path)
                     
                     # If this was the last file in the collection, consider removing the collection
                     if not files:
+                        log.debug(f"Collection now empty: {collection}")
                         collections[collection] = []
             
             # Save metadata changes
             self._save_metadata()
             
             # Delete the file
+            log.debug(f"Deleting file: {file_path}")
             os.remove(file_path)
+            log.info(f"List deleted successfully")
             
             return True
         except Exception as e:
-            print(f"Error deleting list: {e}")
-            traceback.print_exc()
+            log.error(f"Error deleting list: {e}")
+            log.debug(traceback.format_exc())
             return False
     
     def import_external_list(self, external_path: str) -> Optional[str]:
@@ -560,23 +646,30 @@ class ListRepository:
         Returns:
             The path to the imported file or None if import failed
         """
+        log.info(f"Importing external list: {external_path}")
         try:
             # Load the external file
             if external_path.endswith(".sush"):
+                log.debug("Importing as SUSH format")
                 albums, metadata = self.list_manager.import_from_new_format(external_path)
             elif external_path.endswith(".json"):
+                log.debug("Importing as JSON format")
                 albums, metadata = self.list_manager.import_from_old_format(external_path)
             else:
+                log.error(f"Unsupported file format: {external_path}")
                 raise ValueError(f"Unsupported file format: {external_path}")
             
             # Generate a file name from the list title
             file_name = metadata.get("title", os.path.basename(external_path))
+            log.debug(f"Using filename: {file_name}")
             
             # Save to the repository
-            return self.save_list(albums, metadata, file_name)
+            new_path = self.save_list(albums, metadata, file_name)
+            log.info(f"Imported to repository: {new_path}")
+            return new_path
         except Exception as e:
-            print(f"Error importing external list: {e}")
-            traceback.print_exc()
+            log.error(f"Error importing external list: {e}")
+            log.debug(traceback.format_exc())
             return None
     
     def _sanitize_filename(self, filename: str) -> str:
@@ -589,6 +682,7 @@ class ListRepository:
         Returns:
             A sanitized filename
         """
+        log.debug(f"Sanitizing filename: {filename}")
         # Replace invalid characters with underscores
         invalid_chars = '\\/:*?"<>|'
         for char in invalid_chars:
@@ -596,6 +690,7 @@ class ListRepository:
         
         # Limit length
         if len(filename) > 100:
+            log.debug(f"Filename too long, truncating to 100 chars")
             filename = filename[:100]
         
         return filename

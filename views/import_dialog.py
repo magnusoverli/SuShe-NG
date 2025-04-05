@@ -5,6 +5,7 @@ Import dialog for album lists
 """
 
 import os
+import traceback
 from typing import List, Optional, Tuple
 
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
@@ -16,6 +17,10 @@ from PyQt6.QtGui import QIcon, QFont
 
 from models.album import Album
 from utils.album_list_manager import AlbumListManager
+from utils.logging_utils import get_module_logger
+
+# Get module logger
+log = get_module_logger()
 
 
 class ImportDialog(QDialog):
@@ -24,6 +29,7 @@ class ImportDialog(QDialog):
     def __init__(self, parent=None):
         """Initialize the import dialog."""
         super().__init__(parent)
+        log.debug("Initializing ImportDialog")
         
         self.setWindowTitle("Import Album List")
         self.setMinimumSize(600, 400)
@@ -37,9 +43,11 @@ class ImportDialog(QDialog):
         
         # Setup the UI
         self._setup_ui()
+        log.debug("ImportDialog initialized")
     
     def _setup_ui(self):
         """Set up the user interface."""
+        log.debug("Setting up import dialog UI")
         # Main layout
         main_layout = QVBoxLayout(self)
         
@@ -111,9 +119,11 @@ class ImportDialog(QDialog):
         
         # Set the layout
         self.setLayout(main_layout)
+        log.debug("Import dialog UI setup complete")
     
     def _browse_file(self):
         """Open a file dialog to select the source file."""
+        log.debug("Opening file dialog to select source file")
         file_path, _ = QFileDialog.getOpenFileName(
             self,
             "Select Album List File",
@@ -122,8 +132,11 @@ class ImportDialog(QDialog):
         )
         
         if file_path:
+            log.debug(f"Selected file: {file_path}")
             self.file_path_label.setText(os.path.basename(file_path))
             self._preview_import(file_path)
+        else:
+            log.debug("File selection cancelled")
     
     def _preview_import(self, file_path: str):
         """
@@ -132,6 +145,7 @@ class ImportDialog(QDialog):
         Args:
             file_path: Path to the source file
         """
+        log.info(f"Generating preview for import from: {file_path}")
         try:
             # Clear the preview list
             self.preview_list.clear()
@@ -144,6 +158,7 @@ class ImportDialog(QDialog):
             self.status_label.setText("Parsing file...")
             
             # Import the file
+            log.debug("Parsing file for preview")
             albums, metadata = self.list_manager.import_from_old_format(file_path)
             
             # Update progress
@@ -158,6 +173,7 @@ class ImportDialog(QDialog):
             self.list_description_edit.setText(metadata.get("description", ""))
             
             # Update preview list
+            log.debug(f"Adding {min(len(albums), 20)} albums to preview list")
             for idx, album in enumerate(albums):
                 if idx >= 20:  # Limit preview to 20 items
                     item = QListWidgetItem(f"... and {len(albums) - 20} more albums")
@@ -176,9 +192,12 @@ class ImportDialog(QDialog):
             
             # Enable OK button
             self.ok_button.setEnabled(True)
+            log.info(f"Import preview complete: {len(albums)} albums found")
             
         except Exception as e:
             # Handle error
+            log.error(f"Error previewing import: {e}")
+            log.debug(traceback.format_exc())
             self.progress_bar.setVisible(False)
             self.status_label.setText(f"Error: {str(e)}")
             QMessageBox.critical(self, "Import Error", f"Failed to import file: {str(e)}")
@@ -190,6 +209,7 @@ class ImportDialog(QDialog):
         Returns:
             Tuple containing the list of albums and metadata dictionary
         """
+        log.debug("Getting import results")
         # Update metadata with user-entered values
         self.list_metadata["title"] = self.list_title_edit.text()
         self.list_metadata["description"] = self.list_description_edit.text()
@@ -207,10 +227,14 @@ def show_import_dialog(parent=None) -> Tuple[Optional[List[Album]], Optional[dic
     Returns:
         Tuple of (albums, metadata) if successful, (None, None) if canceled
     """
+    log.info("Showing import dialog")
     dialog = ImportDialog(parent)
     result = dialog.exec()
     
     if result == QDialog.DialogCode.Accepted:
-        return dialog.get_import_results()
+        albums, metadata = dialog.get_import_results()
+        log.info(f"Import dialog accepted: {len(albums)} albums with title '{metadata.get('title')}'")
+        return albums, metadata
     
+    log.debug("Import dialog cancelled")
     return None, None

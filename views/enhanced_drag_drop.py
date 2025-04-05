@@ -359,36 +359,3 @@ def paint_with_drag_handle(self, painter, option, index, original_paint):
     in_drag = False
     if hasattr(view, 'isDragInProgress') and view.isDragInProgress:
         in_drag = True
-    
-    # Only show hover effects if we're not in the middle of a drag operation
-    if col == 0 and option.state & QStyle.StateFlag.State_MouseOver and not in_drag:
-        # Overlay a subtle drag indicator
-        rect = option.rect
-        
-        # Only draw if we're in the album art area 
-        image_rect = rect.adjusted(12, 4, -rect.width() + 60, 4 + 48)
-        
-        # Draw a subtle "grip" indicator over the album art
-        painter.save()
-        
-        # Semi-transparent overlay
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QBrush(QColor(0, 0, 0, 40)))  # Subtle opacity
-        painter.drawRoundedRect(image_rect, 4, 4)
-        
-        # Draw grip indicators
-        painter.setPen(QPen(QColor(255, 255, 255, 100), 1.0))  # Subtle lines
-        
-        # Draw 3 short horizontal lines
-        line_width = image_rect.width() // 3
-        x_center = image_rect.center().x()
-        y_spacing = image_rect.height() // 4
-        
-        for i in range(3):
-            y = image_rect.top() + y_spacing + (i * y_spacing)
-            painter.drawLine(
-                x_center - line_width // 2, y,
-                x_center + line_width // 2, y
-            )
-        
-        painter.restore()

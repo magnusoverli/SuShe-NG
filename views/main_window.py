@@ -568,10 +568,6 @@ class MainWindow(QMainWindow):
             # Update the status bar
             self.status_bar.showMessage(f"Opened {len(albums)} albums from {file_path}")
             
-            # Refresh the sidebar if it exists
-            if hasattr(self, 'sidebar_manager'):
-                self.sidebar_manager.refresh_lists()
-            
         except Exception as e:
             # Show error message
             QMessageBox.critical(

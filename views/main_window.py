@@ -737,69 +737,6 @@ class MainWindow(QMainWindow):
         log.debug(f"Saving to collection: {collection_name}")
         self.save_to_collection_manager()
 
-
-    def _do_save_file(self, file_path):
-        """
-        Save the current album list to the specified file.
-        
-        Args:
-            file_path: Path to save the file
-        """
-        log.debug(f"Saving to file: {file_path}")
-        try:
-            # Create a list manager
-            list_manager = AlbumListManager()
-            
-            # Create metadata if it doesn't exist
-            if not hasattr(self, 'list_metadata'):
-                log.debug("Creating default metadata for save")
-                self.list_metadata = {
-                    "title": "My Album List",
-                    "description": "Album list created with SuShe NG",
-                    "date_created": datetime.now().isoformat(),
-                    "date_modified": datetime.now().isoformat()
-                }
-            else:
-                # Update the modification date
-                self.list_metadata["date_modified"] = datetime.now().isoformat()
-            
-            # Export the list
-            list_manager.export_to_new_format(
-                self.albums,
-                self.list_metadata,
-                file_path
-            )
-            
-            # Store the current file path
-            self.current_file_path = file_path
-            
-            # Update window title
-            list_title = self.list_metadata.get("title", "Untitled List")
-            self.setWindowTitle(f"{list_title} - SuShe NG")
-            
-            # Update the status bar
-            self.status_bar.showMessage(f"Saved {len(self.albums)} albums to {file_path}")
-            log.info(f"Successfully saved {len(self.albums)} albums to {file_path}")
-            
-            # Add to recent files
-            if hasattr(self, 'config') and self.config:
-                log.debug("Adding saved file to recent files")
-                self.config.add_recent_file(file_path)
-                
-                # Update the recent files menu
-                self._update_recent_files_menu()
-                
-        except Exception as e:
-            # Show error message
-            log.error(f"Error saving to {file_path}: {e}")
-            log.debug(traceback.format_exc())
-            QMessageBox.critical(
-                self,
-                "Save Error",
-                f"An error occurred while saving: {str(e)}"
-            )
-
-
     def _update_recent_files_menu(self):
         """
         Update the recent files menu.
@@ -930,133 +867,6 @@ class MainWindow(QMainWindow):
         self._update_recent_files_menu()
         log.info("Recent files list cleared")
 
-    def save_to_repository(self, existing_path: str = None, allow_empty: bool = False) -> None:
-        """
-        Save the current album list to the repository.
-        
-        Args:
-            existing_path: Path to existing file (optional)
-            allow_empty: Whether to allow saving empty lists (for new list creation)
-        """
-        log.debug("Saving to repository")
-        try:
-            # Make sure we have albums and metadata, but allow empty albums if specified
-            if not hasattr(self, 'albums') or (not self.albums and not allow_empty):
-                log.warning("No albums to save and empty lists not allowed")
-                QMessageBox.warning(
-                    self,
-                    "Save Warning",
-                    "There are no albums to save."
-                )
-                return
-            
-            # Create metadata if it doesn't exist
-            if not hasattr(self, 'list_metadata'):
-                log.debug("Creating default metadata for repository save")
-                self.list_metadata = {
-                    "title": "My Album List",
-                    "description": "Album list created with SuShe NG",
-                    "date_created": datetime.now().isoformat(),
-                    "date_modified": datetime.now().isoformat()
-                }
-            else:
-                # Update the modification date
-                self.list_metadata["date_modified"] = datetime.now().isoformat()
-            
-            # Get the file name from the existing path, if provided
-            file_name = None
-            if existing_path:
-                file_name = os.path.basename(existing_path)
-                log.debug(f"Using existing filename: {file_name}")
-            
-            # Save to the repository
-            log.debug(f"Saving {len(self.albums)} albums to repository")
-            file_path = self.list_repository.save_list(
-                self.albums, self.list_metadata, file_name)
-            
-            # Store the current file path
-            self.current_file_path = file_path
-            log.debug(f"Saved to: {file_path}")
-            
-            # Check if this list is in a collection, and add it if not
-            if "collection" in self.list_metadata:
-                # Add to the specified collection
-                collection_name = self.list_metadata["collection"]
-                log.debug(f"Adding to specified collection: {collection_name}")
-                self.list_repository.add_to_collection(file_path, collection_name)
-            else:
-                # No collection specified, check if it's in any collection
-                log.debug("No collection specified, checking existing collections")
-                collections = self.list_repository.get_collections()
-                found_in_collection = False
-                
-                for collection_name, collection_lists in collections.items():
-                    for list_info in collection_lists:
-                        if list_info.get("file_path") == file_path:
-                            found_in_collection = True
-                            # Store the collection info for future saves
-                            self.list_metadata["collection"] = collection_name
-                            log.debug(f"List found in collection: {collection_name}")
-                            break
-                    if found_in_collection:
-                        break
-                        
-                if not found_in_collection:
-                    # Not in any collection, ask user to select one
-                    log.info("List not in any collection, prompting user")
-                    collection_names = list(collections.keys())
-                    
-                    # Import the collection selection dialog
-                    from views.collection_selection_dialog import select_collection
-                    
-                    # Show the collection selection dialog
-                    collection_name, is_new, ok = select_collection(
-                        collection_names,
-                        self,
-                        "Save Album List",
-                        "This list is not in any collection. Choose a collection for it:"
-                    )
-                    
-                    if not ok:
-                        # Default to creating a new collection based on the list name
-                        collection_name = f"{self.list_metadata.get('title', 'My')} Collection"
-                        is_new = True
-                        log.debug(f"User cancelled, creating default collection: {collection_name}")
-                    
-                    # Create the new collection if needed
-                    if is_new:
-                        log.info(f"Creating new collection: {collection_name}")
-                        self.list_repository.create_collection(collection_name)
-                    
-                    # Add to the selected collection
-                    log.debug(f"Adding list to collection: {collection_name}")
-                    self.list_repository.add_to_collection(file_path, collection_name)
-                    # Store for future saves
-                    self.list_metadata["collection"] = collection_name
-            
-            # Update window title
-            list_title = self.list_metadata.get("title", "Untitled List")
-            self.setWindowTitle(f"{list_title} - SuShe NG")
-            
-            # Update the status bar
-            collection_name = self.list_metadata.get("collection", "")
-            if collection_name:
-                self.status_bar.showMessage(f"Saved {len(self.albums)} albums to collection: {collection_name}")
-                log.info(f"Successfully saved {len(self.albums)} albums to collection: {collection_name}")
-            else:
-                self.status_bar.showMessage(f"Saved {len(self.albums)} albums to repository")
-                log.info(f"Successfully saved {len(self.albums)} albums to repository")
-        except Exception as e:
-            log.error(f"Error saving to repository: {e}")
-            log.debug(traceback.format_exc())
-            # Show error message
-            QMessageBox.critical(
-                self,
-                "Save Error",
-                f"An error occurred while saving: {str(e)}"
-            )
-
-    
     def create_main_panel(self) -> QWidget:
         """Create the main content panel with header and album table."""
         log.debug("Creating main panel")
@@ -1206,9 +1016,9 @@ class MainWindow(QMainWindow):
             
             # Add the table view to the layout
             layout.addWidget(self.table_view, 1)  # Give it stretch factor
-            self.setup_enhanced_drag_drop()
             
             # Create list metadata for the empty list
+            # MOVED BEFORE setup_enhanced_drag_drop to avoid uninitialized variable risk
             log.debug("Creating default list metadata")
             self.list_metadata = {
                 "title": "Untitled List",
@@ -1216,6 +1026,9 @@ class MainWindow(QMainWindow):
                 "date_created": datetime.now().isoformat(),
                 "date_modified": datetime.now().isoformat()
             }
+            
+            # Set up enhanced drag and drop functionality
+            self.setup_enhanced_drag_drop()
                 
             return panel
         except Exception as e:

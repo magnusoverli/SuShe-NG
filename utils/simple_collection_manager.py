@@ -166,14 +166,22 @@ class SimpleCollectionManager:
         Returns:
             A dictionary with list information or None if the file cannot be read
         """
+        if not os.path.exists(file_path):
+            log.warning(f"List file not found: {file_path}")
+            return None
+            
         try:
             log.debug(f"Getting list info for: {file_path}")
+            
             with open(file_path, "r", encoding="utf-8") as f:
                 content = f.read()
             
             # Parse the JSON data
-            import json
-            data = json.loads(content)
+            try:
+                data = json.loads(content)
+            except json.JSONDecodeError as e:
+                log.error(f"Invalid JSON format in file {file_path}: {e}")
+                return None
             
             # Check data format and extract info
             if isinstance(data, list):
@@ -247,49 +255,48 @@ class SimpleCollectionManager:
             file_name: Name for the file (optional)
             
         Returns:
-            Path to the saved file
+            Path to the saved file or None if save failed
         """
-        log.debug(f"Saving album list, collection: {collection_name}")
-        
-        # If no collection specified, use the one from metadata or default
-        if not collection_name:
-            collection_name = metadata.get("collection", "Default")
-            log.debug(f"Using collection from metadata: {collection_name}")
-        
-        # Ensure the collection exists
-        collection_path = os.path.join(self.collections_dir, collection_name)
-        if not os.path.exists(collection_path):
-            log.debug(f"Collection doesn't exist, creating: {collection_name}")
-            os.makedirs(collection_path)
-        
-        # Generate filename from title if not provided
-        if not file_name:
-            title = metadata.get("title", "Untitled")
-            file_name = self._sanitize_filename(title)
-            log.debug(f"Generated filename: {file_name}")
-        
-        # Ensure extension
-        if not file_name.endswith(".sush"):
-            file_name += ".sush"
-        
-        file_path = os.path.join(collection_path, file_name)
-        log.debug(f"Full file path: {file_path}")
-        
-        # Just keep minimal metadata - title and modified date
-        simple_metadata = {
-            "title": metadata.get("title", "Untitled"),
-            "collection": collection_name,
-            "date_modified": datetime.now().isoformat()
-        }
-        
-        # Save to file
         try:
+            log.debug(f"Saving album list, collection: {collection_name}")
+            
+            # If no collection specified, use the one from metadata or default
+            if not collection_name:
+                collection_name = metadata.get("collection", "Default")
+                log.debug(f"Using collection from metadata: {collection_name}")
+            
+            # Ensure the collection exists
+            collection_path = os.path.join(self.collections_dir, collection_name)
+            os.makedirs(collection_path, exist_ok=True)
+            
+            # Generate filename from title if not provided
+            if not file_name:
+                title = metadata.get("title", "Untitled")
+                file_name = self._sanitize_filename(title)
+                log.debug(f"Generated filename: {file_name}")
+            
+            # Ensure extension
+            if not file_name.endswith(".sush"):
+                file_name += ".sush"
+            
+            file_path = os.path.join(collection_path, file_name)
+            log.debug(f"Full file path: {file_path}")
+            
+            # Just keep minimal metadata - title and modified date
+            simple_metadata = {
+                "title": metadata.get("title", "Untitled"),
+                "collection": collection_name,
+                "date_modified": datetime.now().isoformat()
+            }
+            
+            # Save to file
             log.debug(f"Saving {len(albums)} albums to file")
+            data = {
+                "metadata": simple_metadata,
+                "albums": [self._album_to_dict(album) for album in albums]
+            }
+            
             with open(file_path, "w", encoding="utf-8") as f:
-                data = {
-                    "metadata": simple_metadata,
-                    "albums": [self._album_to_dict(album) for album in albums]
-                }
                 json.dump(data, f, indent=2)
             
             # Update recent files
@@ -304,7 +311,8 @@ class SimpleCollectionManager:
         except Exception as e:
             log.error(f"Error saving album list: {e}")
             log.debug(traceback.format_exc())
-            raise
+            # Return None instead of raising to match expected behavior
+            return None
     
     def load_album_list(self, file_path):
         """

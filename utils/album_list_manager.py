@@ -40,81 +40,104 @@ class AlbumListManager:
         self.covers_directory = covers_directory
         os.makedirs(covers_directory, exist_ok=True)
     
-    def import_from_old_format(self, file_path: str) -> Tuple[List[Album], Dict[str, Any]]:
+    def import_from_new_format(self, file_path: str) -> Tuple[List[Album], Dict[str, Any]]:
         """
-        Import albums from the old format JSON file.
+        Import albums from the new format JSON file.
         
         Args:
-            file_path: Path to the old format JSON file
+            file_path: Path to the new format JSON file
             
         Returns:
             tuple: (list of Album objects, metadata dict)
         """
-        log.info(f"Importing from old format: {file_path}")
+        log.info(f"Importing from new format: {file_path}")
+        
+        if not os.path.exists(file_path):
+            error_msg = f"File not found: {file_path}"
+            log.error(error_msg)
+            raise ImportError(error_msg)
+            
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-            
-            log.debug(f"Loaded old format JSON with {len(data)} albums")
-            albums = []
-            # Extract list title from filename if available
-            list_name = Path(file_path).stem
-            log.debug(f"Using list name from filename: {list_name}")
-            
-            for idx, album_data in enumerate(data):
-                # Convert release date string to date object
-                release_date_str = album_data.get('release_date', '')
                 try:
-                    # Try to parse DD-MM-YYYY format
-                    day, month, year = map(int, release_date_str.split('-'))
-                    release_date = date(year, month, day)
-                except (ValueError, AttributeError):
-                    # Fallback to today's date if parsing fails
-                    log.warning(f"Failed to parse release date: {release_date_str}, using today's date")
+                    data = json.load(f)
+                except json.JSONDecodeError as e:
+                    error_msg = f"Invalid JSON format in file {file_path}: {e}"
+                    log.error(error_msg)
+                    raise ImportError(error_msg) from e
+            
+            # Check format version for compatibility
+            format_version = data.get("format_version", 0)
+            if format_version > self.CURRENT_FORMAT_VERSION:
+                log.warning(f"File format version ({format_version}) is newer than supported ({self.CURRENT_FORMAT_VERSION})")
+            
+            # Extract metadata
+            metadata = data.get("metadata", {})
+            if not metadata:
+                log.warning(f"No metadata found in file: {file_path}")
+                metadata = {"title": os.path.basename(file_path)}
+                
+            log.debug(f"Loaded file metadata: {metadata.get('title', 'Untitled')}")
+            
+            # Process albums
+            albums = []
+            album_data_list = data.get("albums", [])
+            
+            if not album_data_list:
+                log.warning(f"No albums found in file: {file_path}")
+                
+            log.debug(f"Found {len(album_data_list)} albums in file")
+            
+            for album_data in album_data_list:
+                # Parse release date
+                release_date_str = album_data.get("release_date")
+                if release_date_str:
+                    try:
+                        release_date = date.fromisoformat(release_date_str)
+                    except ValueError:
+                        log.warning(f"Failed to parse release date: {release_date_str}, using today's date")
+                        release_date = date.today()
+                else:
                     release_date = date.today()
                 
-                # For old format, keep image data directly in the Album object
-                cover_image_data = album_data.get('cover_image')
-                cover_image_format = album_data.get('cover_image_format', 'PNG')
-                
-                # Create album object
+                # Create Album object
                 album = Album(
-                    artist=album_data.get('artist', ''),
-                    name=album_data.get('album', ''),
+                    artist=album_data.get("artist", ""),
+                    name=album_data.get("title", ""),
                     release_date=release_date,
-                    genre1=album_data.get('genre_1', ''),
-                    genre2=album_data.get('genre_2', ''),
-                    comment=album_data.get('comments', ''),
+                    genre1=album_data.get("genre1", ""),
+                    genre2=album_data.get("genre2", ""),
+                    comment=album_data.get("comment", ""),
                     cover_image=None,  # No file path needed
-                    cover_image_data=cover_image_data,
-                    cover_image_format=cover_image_format
+                    cover_image_data=album_data.get("cover_image_data"),
+                    cover_image_format=album_data.get("cover_image_format")
                 )
                 
-                # Store additional metadata as attributes
-                album.album_id = album_data.get('album_id', '')
-                album.country = album_data.get('country', '')
-                album.rank = album_data.get('rank', idx + 1)
+                # Add any additional fields
+                if "album_id" in album_data:
+                    album.album_id = album_data["album_id"]
+                if "country" in album_data:
+                    album.country = album_data["country"]
+                if "rank" in album_data:
+                    album.rank = album_data["rank"]
+                if "points" in album_data:
+                    album.points = album_data["points"]
                 
                 albums.append(album)
                 log.debug(f"Imported album: {album.artist} - {album.name}")
             
-            # Create metadata for the list
-            metadata = {
-                "title": list_name,
-                "description": f"Imported from {Path(file_path).name}",
-                "date_created": datetime.now().isoformat(),
-                "date_modified": datetime.now().isoformat(),
-                "source_file": file_path,
-                "album_count": len(albums)
-            }
-            
             log.info(f"Successfully imported {len(albums)} albums from {file_path}")
             return albums, metadata
-            
+        
+        except ImportError:
+            # Re-raise already formatted import errors
+            raise
         except Exception as e:
-            log.error(f"Failed to import album list: {e}")
+            error_msg = f"Failed to import album list: {e}"
+            log.error(error_msg)
             log.debug(traceback.format_exc())
-            raise ImportError(f"Failed to import album list: {e}")
+            raise ImportError(error_msg) from e
+
     
     def export_to_new_format(self, albums: List[Album], metadata: Dict[str, Any], 
                         file_path: str) -> None:
@@ -180,6 +203,9 @@ class AlbumListManager:
         # Save the data to the file
         try:
             log.debug(f"Writing export data to file: {file_path}")
+            # Create parent directory if it doesn't exist
+            os.makedirs(os.path.dirname(os.path.abspath(file_path)), exist_ok=True)
+            
             with open(file_path, 'w', encoding='utf-8') as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)
             log.info(f"Successfully exported {len(albums)} albums to {file_path}")

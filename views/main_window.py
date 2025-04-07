@@ -1,7 +1,6 @@
 """
 Main window view for the SuShe NG application with Spotify-like design.
 """
-
 import os
 import base64
 from datetime import datetime
@@ -10,7 +9,7 @@ import traceback
 
 from PyQt6.QtGui import (QAction, QIcon, QCloseEvent, QPixmap, QColor,
                     QPainter, QPen, QPainterPath, QFont, QImage)
-from PyQt6.QtWidgets import (QMainWindow, QTableView, QStatusBar, QSplitter,
+from PyQt6.QtWidgets import (QMainWindow, QTableView, QStatusBar,
                            QVBoxLayout, QHBoxLayout, QWidget, QLabel, QFileDialog,
                            QPushButton, QLineEdit, QFrame, QHeaderView, QMessageBox,
                             QStyledItemDelegate, QStyle)
@@ -18,15 +17,13 @@ from PyQt6.QtCore import (Qt, QEvent, QRect, QRectF)
 
 from views.import_dialog import show_import_dialog
 from utils.album_list_manager import AlbumListManager
+from utils.simple_collection_manager import SimpleCollectionManager  # New import
 from models.album_table_model import AlbumTableModel
 from utils.theme import SpotifyTheme
 from utils.config import Config
 from resources import get_resource_path, resource_exists
 from metadata import ICON_PATH
 from utils.logging_utils import get_module_logger
-
-from utils.list_repository import ListRepository
-from PyQt6.QtWidgets import QInputDialog
 
 # Get module logger
 log = get_module_logger()
@@ -198,13 +195,13 @@ class AlbumTableDelegate(QStyledItemDelegate):
 class MainWindow(QMainWindow):
     """Main application window with Spotify-like design."""
     
-    def __init__(self, config: Optional[Config] = None, list_repository: Optional[ListRepository] = None):
+    def __init__(self, config: Optional[Config] = None, collection_manager: Optional[SimpleCollectionManager] = None):
         """
         Initialize the main window.
         
         Args:
             config: Application configuration manager (optional)
-            list_repository: Repository for list management (optional)
+            collection_manager: Collection manager for list management (optional)
         """
         log.debug("MainWindow.__init__ starting...")
         try:
@@ -215,9 +212,9 @@ class MainWindow(QMainWindow):
             self.config = config or Config()
             log.debug("Config stored")
             
-            # Store the list repository
-            self.list_repository = list_repository or ListRepository()
-            log.debug("List repository stored")
+            # Store the collection manager
+            self.collection_manager = collection_manager or SimpleCollectionManager()
+            log.debug("Collection manager stored")
             
             self.setWindowTitle("SuShe NG")
             self.setMinimumSize(1000, 700)
@@ -246,24 +243,12 @@ class MainWindow(QMainWindow):
             content_layout.setSpacing(0)
             log.debug("Content widget created")
             
-            # Create the main view splitter
-            log.debug("Creating splitter...")
-            self.splitter = QSplitter(Qt.Orientation.Horizontal)
-            self.splitter.setHandleWidth(1)
-            self.splitter.setChildrenCollapsible(False)
-            content_layout.addWidget(self.splitter, 1)  # Give the splitter more space
-            log.debug("Splitter added to layout")
-            
             # Create the main panel
             log.debug("Creating main panel...")
             self.main_panel = self.create_main_panel()
             log.debug("Main panel created")
-            self.splitter.addWidget(self.main_panel)
-            log.debug("Main panel added to splitter")
-            
-            # Set initial sizes for the splitter
-            self.splitter.setSizes([220, 780])
-            log.debug("Splitter sizes set")
+            content_layout.addWidget(self.main_panel, 1)  # Give it stretch factor
+            log.debug("Main panel added to content layout")
             
             # Add the content widget to the main layout
             main_layout.addWidget(content_widget, 1)
@@ -321,64 +306,55 @@ class MainWindow(QMainWindow):
                     log.debug("User cancelled new album list creation")
                     return
             
-            # Get collections from repository
-            if hasattr(self, 'list_repository') and self.list_repository:
-                log.debug("Getting collections from repository")
-                collections = self.list_repository.get_collections()
-                collection_names = list(collections.keys())
-                
-                # Import the new list dialog
-                from views.new_list_dialog import show_new_list_dialog
-                
-                # Show the new list dialog with integrated collection selection
-                log.debug("Showing new list dialog")
-                list_info = show_new_list_dialog(collection_names, self)
-                
-                if not list_info:
-                    # User canceled
-                    log.debug("User cancelled new list dialog")
-                    return
-                
-                # Create the new collection if needed
-                if list_info["is_new_collection"]:
-                    log.info(f"Creating new collection: {list_info['collection_name']}")
-                    self.list_repository.create_collection(list_info["collection_name"])
-                
-                # Create a new empty list
-                log.debug("Creating new empty album list")
-                self.albums = []
-                self.model = AlbumTableModel(self.albums)
-                self.table_view.setModel(self.model)
-                
-                # Set up the table again to ensure proper display
-                self.setup_enhanced_drag_drop()
-                
-                # Reset current file path
-                self.current_file_path = None
-                
-                # Set metadata with the provided information
-                self.list_metadata = {
-                    "title": list_info["title"],
-                    "description": list_info["description"],
-                    "date_created": datetime.now().isoformat(),
-                    "date_modified": datetime.now().isoformat(),
-                    "collection": list_info["collection_name"]  # Store collection information
-                }
-                
-                # Update window title
-                self.setWindowTitle(f"{list_info['title']} - SuShe NG")
-                
-                # Update status bar
-                self.status_bar.showMessage(f"Created new album list in collection: {list_info['collection_name']}")
-                log.info(f"Created new album list: {list_info['title']} in collection: {list_info['collection_name']}")
-                
-                # Save the empty list to repository - passing True to allow empty list
-                self.save_to_repository(allow_empty=True)
-                
-                # Add to the selected collection
-                if self.current_file_path:
-                    log.debug(f"Adding list to collection: {list_info['collection_name']}")
-                    self.list_repository.add_to_collection(self.current_file_path, list_info["collection_name"])
+            # Get collections from manager
+            collections = self.collection_manager.get_collections()
+            collection_names = list(collections.keys())
+            log.debug(f"Available collections: {collection_names}")
+            
+            # Import the new list dialog
+            from views.new_list_dialog import show_new_list_dialog
+            
+            # Show the new list dialog with integrated collection selection
+            log.debug("Showing new list dialog")
+            list_info = show_new_list_dialog(collection_names, self)
+            
+            if not list_info:
+                # User canceled
+                log.debug("User cancelled new list dialog")
+                return
+            
+            # Create the new collection if needed
+            if list_info["is_new_collection"]:
+                log.info(f"Creating new collection: {list_info['collection_name']}")
+                self.collection_manager.create_collection(list_info["collection_name"])
+            
+            # Create a new empty list
+            log.debug("Creating new empty album list")
+            self.albums = []
+            self.model = AlbumTableModel(self.albums)
+            self.table_view.setModel(self.model)
+            
+            # Set up the table again to ensure proper display
+            self.setup_enhanced_drag_drop()
+            
+            # Reset current file path
+            self.current_file_path = None
+            
+            # Set metadata with the provided information
+            self.list_metadata = {
+                "title": list_info["title"],
+                "collection": list_info["collection_name"]
+            }
+            
+            # Update window title
+            self.setWindowTitle(f"{list_info['title']} - SuShe NG")
+            
+            # Update status bar
+            self.status_bar.showMessage(f"Created new album list in collection: {list_info['collection_name']}")
+            log.info(f"Created new album list: {list_info['title']} in collection: {list_info['collection_name']}")
+            
+            # Save the empty list to collection manager - create the file
+            self.save_to_collection_manager(allow_empty=True)
 
         except Exception as e:
             log.error(f"Error creating new file: {e}")
@@ -405,56 +381,40 @@ class MainWindow(QMainWindow):
                 log.debug("User cancelled file selection")
                 return
                     
-            # Import the file into the repository
-            if hasattr(self, 'list_repository') and self.list_repository:
-                # Get collections from repository
-                log.debug("Getting collections for import")
-                collections = self.list_repository.get_collections()
-                collection_names = list(collections.keys())
+            # Get collections
+            collections = self.collection_manager.get_collections()
+            collection_names = list(collections.keys())
+            
+            # Import the collection selection dialog
+            from views.collection_selection_dialog import select_collection
+            
+            # Show the collection selection dialog
+            log.debug("Showing collection selection dialog")
+            collection_name, is_new, ok = select_collection(
+                collection_names,
+                self,
+                "Import Album List",
+                "Choose a collection for the imported list:"
+            )
+            
+            if not ok:
+                # User canceled
+                log.debug("User cancelled collection selection")
+                return
+            
+            # Create the new collection if needed
+            if is_new:
+                log.info(f"Creating new collection for import: {collection_name}")
+                self.collection_manager.create_collection(collection_name)
                 
-                # Import the collection selection dialog
-                from views.collection_selection_dialog import select_collection
-                
-                # Show the collection selection dialog
-                log.debug("Showing collection selection dialog")
-                collection_name, is_new, ok = select_collection(
-                    collection_names,
-                    self,
-                    "Import Album List",
-                    "Choose a collection for the imported list:"
-                )
-                
-                if not ok:
-                    # User canceled
-                    log.debug("User cancelled collection selection")
-                    return
-                
-                # Create the new collection if needed
-                if is_new:
-                    log.info(f"Creating new collection for import: {collection_name}")
-                    self.list_repository.create_collection(collection_name)
-                    
-                # Import the file
-                log.info(f"Importing file: {file_path}")
-                imported_path = self.list_repository.import_external_list(file_path)
-                if imported_path:
-                    # Add to the selected collection
-                    log.debug(f"Adding imported list to collection: {collection_name}")
-                    self.list_repository.add_to_collection(imported_path, collection_name)
-                    
-                    # Open the imported list
-                    self.open_album_list(imported_path)
-                    
-                    # Add collection info to the metadata
-                    if hasattr(self, 'list_metadata'):
-                        self.list_metadata["collection"] = collection_name
-                    
-                    self.status_bar.showMessage(f"Imported list from {file_path} to collection: {collection_name}")
-                    log.info(f"Successfully imported list from {file_path} to collection: {collection_name}")
-            else:
-                # Fallback to old import method
-                log.warning("No repository available, using direct file import")
-                self.open_album_list(file_path)
+            # Import the file
+            log.info(f"Importing file: {file_path}")
+            imported_path = self.collection_manager.import_external_list(file_path, collection_name)
+            if imported_path:
+                # Open the imported list
+                self.open_album_list(imported_path)
+                self.status_bar.showMessage(f"Imported list from {file_path} to collection: {collection_name}")
+                log.info(f"Successfully imported list from {file_path} to collection: {collection_name}")
                     
         except Exception as e:
             log.error(f"Error importing list: {e}")
@@ -561,32 +521,8 @@ class MainWindow(QMainWindow):
         """
         log.debug(f"Opening album list from: {file_path}")
         try:
-            # Load the list from the repository or directly from the file
-            if hasattr(self, 'list_repository') and self.list_repository:
-                log.debug("Loading list from repository")
-                albums, metadata = self.list_repository.load_list(file_path)
-            else:
-                # Fallback to direct loading for backward compatibility
-                log.debug("No repository available, using direct file loading")
-                if file_path.endswith('.json'):
-                    # Old format
-                    log.debug("Loading old format JSON file")
-                    list_manager = AlbumListManager()
-                    albums, metadata = list_manager.import_from_old_format(file_path)
-                elif file_path.endswith('.sush'):
-                    # New format
-                    log.debug("Loading new format SUSH file")
-                    list_manager = AlbumListManager()
-                    albums, metadata = list_manager.import_from_new_format(file_path)
-                else:
-                    # Unknown format
-                    log.warning(f"Unsupported file format: {file_path}")
-                    QMessageBox.warning(
-                        self,
-                        "Unknown File Format",
-                        f"The file {file_path} has an unsupported format."
-                    )
-                    return
+            # Load the list from the collection manager
+            albums, metadata = self.collection_manager.load_album_list(file_path)
             
             # Set the albums
             self.albums = albums
@@ -608,8 +544,17 @@ class MainWindow(QMainWindow):
             list_title = metadata.get("title", "Untitled List")
             self.setWindowTitle(f"{list_title} - SuShe NG")
             
+            # Get collection name
+            collection_name = self.collection_manager.get_collection_for_list(file_path)
+            if collection_name:
+                self.list_metadata["collection"] = collection_name
+            
             # Update the status bar
-            self.status_bar.showMessage(f"Opened {len(albums)} albums from {file_path}")
+            if collection_name:
+                self.status_bar.showMessage(f"Opened {len(albums)} albums from collection: {collection_name}")
+            else:
+                self.status_bar.showMessage(f"Opened {len(albums)} albums from {file_path}")
+                
             log.info(f"Successfully opened {len(albums)} albums from {file_path}")
             
         except Exception as e:
@@ -622,6 +567,106 @@ class MainWindow(QMainWindow):
                 f"An error occurred while opening the file: {str(e)}"
             )
 
+    def save_to_collection_manager(self, existing_path=None, allow_empty=False):
+        """
+        Save the current album list to the collection manager.
+        
+        Args:
+            existing_path: Path to existing file (optional)
+            allow_empty: Whether to allow saving empty lists (for new list creation)
+        """
+        log.debug("Saving to collection manager")
+        try:
+            # Make sure we have albums and metadata, but allow empty albums if specified
+            if not hasattr(self, 'albums') or (not self.albums and not allow_empty):
+                log.warning("No albums to save and empty lists not allowed")
+                QMessageBox.warning(
+                    self,
+                    "Save Warning",
+                    "There are no albums to save."
+                )
+                return
+            
+            # Create metadata if it doesn't exist
+            if not hasattr(self, 'list_metadata'):
+                log.debug("Creating default metadata for save")
+                self.list_metadata = {
+                    "title": "My Album List"
+                }
+            
+            # Get the collection from metadata or ask user
+            collection_name = self.list_metadata.get("collection")
+            
+            if not collection_name:
+                log.debug("No collection specified, prompting user")
+                # Get collections
+                collections = self.collection_manager.get_collections()
+                collection_names = list(collections.keys())
+                
+                # Ask which collection to save to
+                from views.collection_selection_dialog import select_collection
+                collection_name, is_new, ok = select_collection(
+                    collection_names,
+                    self,
+                    "Save Album List",
+                    "Choose a collection for your album list:"
+                )
+                
+                if not ok:
+                    log.debug("User cancelled collection selection")
+                    return
+                
+                # Create new collection if needed
+                if is_new:
+                    log.info(f"Creating new collection: {collection_name}")
+                    self.collection_manager.create_collection(collection_name)
+                
+                # Update metadata with collection
+                self.list_metadata["collection"] = collection_name
+            
+            # Get the file name from the existing path, if provided
+            file_name = None
+            if existing_path:
+                file_name = os.path.basename(existing_path)
+                log.debug(f"Using existing filename: {file_name}")
+            
+            # Save to the collection manager
+            log.debug(f"Saving {len(self.albums)} albums to collection: {collection_name}")
+            file_path = self.collection_manager.save_album_list(
+                self.albums, 
+                self.list_metadata, 
+                collection_name,
+                file_name
+            )
+            
+            # Store the current file path
+            self.current_file_path = file_path
+            log.debug(f"Saved to: {file_path}")
+            
+            # Update window title
+            list_title = self.list_metadata.get("title", "Untitled List")
+            self.setWindowTitle(f"{list_title} - SuShe NG")
+            
+            # Update the status bar
+            self.status_bar.showMessage(f"Saved {len(self.albums)} albums to collection: {collection_name}")
+            log.info(f"Successfully saved {len(self.albums)} albums to collection: {collection_name}")
+            
+            # Add to recent files in config
+            if hasattr(self, 'config') and self.config:
+                log.debug("Adding saved file to recent files")
+                self.config.add_recent_file(file_path)
+                # Update the recent files menu
+                self._update_recent_files_menu()
+                
+        except Exception as e:
+            log.error(f"Error saving to collection manager: {e}")
+            log.debug(traceback.format_exc())
+            # Show error message
+            QMessageBox.critical(
+                self,
+                "Save Error",
+                f"An error occurred while saving: {str(e)}"
+            )
 
     def _save_file(self):
         """
@@ -634,7 +679,7 @@ class MainWindow(QMainWindow):
         if current_file:
             # Save to the current file
             log.debug(f"Saving to existing file: {current_file}")
-            self._do_save_file(current_file)
+            self.save_to_collection_manager(existing_path=current_file)
         else:
             # No current file, use Save As
             log.debug("No current file, using Save As")
@@ -660,22 +705,37 @@ class MainWindow(QMainWindow):
         if not hasattr(self, 'list_metadata'):
             log.debug("Creating default metadata for save")
             self.list_metadata = {
-                "title": "My Album List",
-                "description": "Album list created with SuShe NG"
+                "title": "My Album List"
             }
         
-        file_path, _ = QFileDialog.getSaveFileName(
+        # Get collections
+        collections = self.collection_manager.get_collections()
+        collection_names = list(collections.keys())
+        
+        # Ask which collection to save to
+        from views.collection_selection_dialog import select_collection
+        collection_name, is_new, ok = select_collection(
+            collection_names,
             self,
             "Save Album List",
-            f"{self.list_metadata.get('title', 'My Album List')}.sush",
-            "SuShe NG Files (*.sush);;All Files (*.*)"
+            "Choose a collection for your album list:"
         )
         
-        if file_path:
-            log.info(f"Selected file for save: {file_path}")
-            self._do_save_file(file_path)
-        else:
+        if not ok:
             log.debug("User cancelled save dialog")
+            return
+        
+        # Create new collection if needed
+        if is_new:
+            log.info(f"Creating new collection: {collection_name}")
+            self.collection_manager.create_collection(collection_name)
+        
+        # Update metadata with collection
+        self.list_metadata["collection"] = collection_name
+        
+        # Save to collection manager
+        log.debug(f"Saving to collection: {collection_name}")
+        self.save_to_collection_manager()
 
 
     def _do_save_file(self, file_path):
@@ -752,10 +812,25 @@ class MainWindow(QMainWindow):
         # Clear the menu
         self.recent_files_menu.clear()
         
-        # Get recent files
+        # Get recent files from both sources
         recent_files = []
         if hasattr(self, 'config') and self.config:
-            recent_files = self.config.get_recent_files()
+            # Get from config
+            config_recent = self.config.get_recent_files()
+            recent_files.extend(config_recent)
+        
+        if hasattr(self, 'collection_manager'):
+            # Get from collection manager
+            manager_recent = [item["file_path"] for item in self.collection_manager.get_recent_lists()]
+            # Add to the list if not already there
+            for path in manager_recent:
+                if path not in recent_files:
+                    recent_files.append(path)
+        
+        # Remove duplicates and non-existent files
+        recent_files = [f for f in recent_files if os.path.exists(f)]
+        # Limit to first 10
+        recent_files = recent_files[:10]
         
         if not recent_files:
             # Add a disabled "No recent files" action
@@ -767,8 +842,24 @@ class MainWindow(QMainWindow):
             # Add actions for each recent file
             log.debug(f"Adding {len(recent_files)} recent files to menu")
             for file_path in recent_files:
-                file_name = os.path.basename(file_path)
-                action = QAction(file_name, self)
+                # Try to get more descriptive name from collection manager
+                title = os.path.basename(file_path)
+                collection = None
+                
+                if hasattr(self, 'collection_manager'):
+                    # Try to get info from collection manager
+                    list_info = self.collection_manager._get_list_info(file_path)
+                    if list_info:
+                        title = list_info.get("title", title)
+                        collection = list_info.get("collection")
+                
+                # Create menu item name
+                if collection:
+                    display_name = f"{title} ({collection})"
+                else:
+                    display_name = title
+                    
+                action = QAction(display_name, self)
                 action.setData(file_path)
                 action.triggered.connect(lambda checked, path=file_path: self.open_album_list(path))
                 self.recent_files_menu.addAction(action)
@@ -831,8 +922,13 @@ class MainWindow(QMainWindow):
         log.debug("Clearing recent files list")
         if hasattr(self, 'config') and self.config:
             self.config.set("recent_files", [])
-            self._update_recent_files_menu()
-            log.info("Recent files list cleared")
+        
+        if hasattr(self, 'collection_manager') and hasattr(self.collection_manager, 'metadata'):
+            self.collection_manager.metadata["recent_lists"] = []
+            self.collection_manager._save_metadata()
+        
+        self._update_recent_files_menu()
+        log.info("Recent files list cleared")
 
     def save_to_repository(self, existing_path: str = None, allow_empty: bool = False) -> None:
         """
@@ -977,7 +1073,7 @@ class MainWindow(QMainWindow):
             header_layout = QHBoxLayout(header)
             header_layout.setContentsMargins(16, 8, 16, 8)
             
-            # Add search box
+            # Add search box (placeholder - not functional yet)
             search_box = QLineEdit()
             search_box.setPlaceholderText("Search albums...")
             search_box.setFixedWidth(220)
@@ -991,7 +1087,7 @@ class MainWindow(QMainWindow):
             """)
             header_layout.addWidget(search_box)
             
-            # Add navigation buttons
+            # Add navigation buttons (placeholders - not functional yet)
             nav_back = QPushButton("←")
             nav_back.setFixedSize(32, 32)
             nav_back.setStyleSheet("""
@@ -1024,20 +1120,7 @@ class MainWindow(QMainWindow):
             header_layout.addWidget(nav_forward)
             header_layout.addStretch()
             
-            # Add view options
-            view_button = QPushButton("Table View")
-            view_button.setStyleSheet("""
-                QPushButton {
-                    background-color: #333333;
-                    color: #FFFFFF;
-                    border-radius: 16px;
-                    padding: 8px 16px;
-                }
-                QPushButton:hover {
-                    background-color: #444444;
-                }
-            """)
-            header_layout.addWidget(view_button)
+            # Table view button removed
             
             layout.addWidget(header)
             
@@ -1052,7 +1135,7 @@ class MainWindow(QMainWindow):
             
             layout.addWidget(title_bar)
             
-            # Create and set up the table view - CHANGE THE ORDER OF OPERATIONS
+            # Create and set up the table view
             self.table_view = QTableView()
             log.debug("Creating table view")
             
@@ -1367,9 +1450,6 @@ class MainWindow(QMainWindow):
             }
             QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
                 width: 0px;
-            }
-            QSplitter::handle {
-                background-color: #282828;
             }
             QStatusBar {
                 background-color: #181818;

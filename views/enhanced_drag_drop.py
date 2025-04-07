@@ -349,13 +349,3 @@ def paint_with_drag_handle(self, painter, option, index, original_paint):
     """
     # Call the original paint method directly (not through self)
     original_paint(painter, option, index)
-    
-    # Then add our drag handle enhancements when hovering over the first column
-    # BUT only when not in a drag operation
-    col = index.column()
-    
-    # Check if we are in a drag operation by looking at the view
-    view = self.parent()
-    in_drag = False
-    if hasattr(view, 'isDragInProgress') and view.isDragInProgress:
-        in_drag = True

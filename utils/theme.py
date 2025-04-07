@@ -11,7 +11,7 @@ class SpotifyTheme:
     
     # Color constants - exact Spotify colors
     BACKGROUND = QColor(18, 18, 18)        # #121212 - Main background
-    BACKGROUND_DARKER = QColor(0, 0, 0)    # #000000 - Sidebar background
+    BACKGROUND_DARKER = QColor(0, 0, 0)    # #000000 - Dark background element
     BACKGROUND_LIGHTER = QColor(40, 40, 40)# #282828 - Card background
     FOREGROUND = QColor(255, 255, 255)     # #FFFFFF - Primary text
     FOREGROUND_SECONDARY = QColor(179, 179, 179)  # #B3B3B3 - Secondary text
